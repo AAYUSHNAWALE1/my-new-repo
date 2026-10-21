@@ -341,7 +341,11 @@ export default function App() {
 
   return (
     <>
-      <NavBar activeScreen={activeScreen} onScreenChange={setActiveScreen} />
+      <NavBar
+        activeScreen={activeScreen}
+        onScreenChange={setActiveScreen}
+        disruptionsCount={effectiveDisruptions.length}
+      />
 
       {/* Replay Mode Indicator Bar */}
       {isReplaying && (
@@ -432,6 +436,7 @@ export default function App() {
           weights={effectiveWeights}
           onWeightsChange={handleWeightsChange}
           onLogEvent={handleLogEvent}
+          onNavigate={setActiveScreen}
         />
       )}
 
@@ -444,6 +449,7 @@ export default function App() {
           onStageChange={handleStageChange}
           activeRouteId={effectiveRouteId}
           onSelectRoute={setActiveRouteId}
+          onNavigate={setActiveScreen}
         />
       )}
 

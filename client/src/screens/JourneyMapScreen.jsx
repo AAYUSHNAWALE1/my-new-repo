@@ -28,6 +28,7 @@ export default function JourneyMapScreen({
   onStageChange,
   activeRouteId = "accessible-main",
   onSelectRoute,
+  onNavigate,
 }) {
   const currentStage = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
 
@@ -83,8 +84,8 @@ export default function JourneyMapScreen({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-          {/* Central disruptions indicator */}
-          {disruptions.length > 0 && (
+          {/* Central disruptions indicator & direct Disruption Tab shortcut */}
+          {disruptions.length > 0 ? (
             <div
               style={{
                 display: "flex",
@@ -99,7 +100,25 @@ export default function JourneyMapScreen({
                 fontWeight: 700,
               }}
             >
-              <span>🚨 {disruptions.length} Obstacle{disruptions.length > 1 ? "s" : ""}</span>
+              <button
+                onClick={() => onNavigate?.("disruption")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: "0.75rem",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                }}
+                title="Open Disruption & Recovery Screen"
+              >
+                <span>🚨 {disruptions.length} Obstacle{disruptions.length > 1 ? "s" : ""}</span>
+                <span style={{ textDecoration: "underline", opacity: 0.9 }}>View in Disruption Screen ➔</span>
+              </button>
               {onClearDisruptions && (
                 <button
                   onClick={onClearDisruptions}
@@ -110,8 +129,9 @@ export default function JourneyMapScreen({
                     cursor: "pointer",
                     fontSize: "0.75rem",
                     textDecoration: "underline",
-                    padding: 0,
+                    padding: "0 0 0 0.4rem",
                     marginLeft: "0.2rem",
+                    borderLeft: "1px solid rgba(255, 179, 71, 0.4)",
                   }}
                   title="Clear disruptions to baseline"
                 >
@@ -119,6 +139,27 @@ export default function JourneyMapScreen({
                 </button>
               )}
             </div>
+          ) : (
+            <button
+              onClick={() => onNavigate?.("disruption")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                padding: "0.3rem 0.75rem",
+                borderRadius: "999px",
+                background: "rgba(108,99,255,0.12)",
+                border: "1px solid rgba(108,99,255,0.3)",
+                fontSize: "0.75rem",
+                color: "var(--color-primary-light)",
+                cursor: "pointer",
+                fontWeight: 600,
+                transition: "all 0.15s ease",
+              }}
+              title="Test & Simulate Corridor Disruptions"
+            >
+              <span>🚧 Disruption Lab ➔</span>
+            </button>
           )}
           <WeatherWidget />
         </div>

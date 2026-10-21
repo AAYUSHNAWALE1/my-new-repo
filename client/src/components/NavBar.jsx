@@ -8,7 +8,7 @@ const TABS = [
   { id: "disruption", label: "③ Disruption & Recovery" },
 ];
 
-export default function NavBar({ activeScreen, onScreenChange }) {
+export default function NavBar({ activeScreen, onScreenChange, disruptionsCount = 0 }) {
   return (
     <nav className="nav" role="navigation" aria-label="Main navigation">
       {/* PivotPath Official Brand Logo */}
@@ -21,7 +21,10 @@ export default function NavBar({ activeScreen, onScreenChange }) {
           padding: "4px 14px",
           borderRadius: "8px",
           boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+          cursor: "pointer",
         }}
+        onClick={() => onScreenChange("plan")}
+        title="PivotPath Home (Plan & Profile)"
       >
         <img
           src="/logo.png"
@@ -44,8 +47,29 @@ export default function NavBar({ activeScreen, onScreenChange }) {
               aria-selected={activeScreen === tab.id}
               aria-controls={`screen-${tab.id}`}
               onClick={() => onScreenChange(tab.id)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.45rem",
+              }}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.id === "disruption" && disruptionsCount > 0 && (
+                <span
+                  style={{
+                    background: "var(--color-danger)",
+                    color: "#fff",
+                    borderRadius: "999px",
+                    padding: "0.1rem 0.45rem",
+                    fontSize: "0.68rem",
+                    fontWeight: 800,
+                    lineHeight: 1,
+                  }}
+                  title={`${disruptionsCount} active disruption(s)`}
+                >
+                  {disruptionsCount}
+                </span>
+              )}
             </button>
           </li>
         ))}
