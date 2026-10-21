@@ -27,16 +27,18 @@ export default function EventLog({
   onStepReplay,
   onExitReplay,
 }) {
-  const [collapsed, setCollapsed] = useState(!isReplaying);
+  const [collapsed, setCollapsed] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const logEndRef = useRef(null);
 
-  // Auto-expand during time-machine replay
+  // Auto-expand when replaying
   useEffect(() => {
-    if (isReplaying) setCollapsed(false);
+    if (isReplaying) {
+      setCollapsed(false);
+    }
   }, [isReplaying]);
 
-  // Auto-scroll on new entries if not replaying
+  // Auto-scroll on new entries if expanded and not replaying
   useEffect(() => {
     if (!collapsed && !isReplaying) {
       logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -59,17 +61,15 @@ export default function EventLog({
   }, [isPlaying, isReplaying, replayIndex, eventLog.length, onStepReplay]);
 
   const activeReplayEvent = isReplaying && eventLog[replayIndex] ? eventLog[replayIndex] : null;
-  const latestEvent = eventLog[eventLog.length - 1];
 
   return (
     <footer
       id="dashboard-event-log"
       className="event-log-terminal"
       style={{
-        maxWidth: "1360px",
-        margin: "0.5rem auto 1rem auto",
+        maxWidth: "1400px",
+        margin: "0.5rem auto 1.25rem auto",
         padding: "0 1.25rem",
-        width: "100%",
       }}
     >
       <div
@@ -80,7 +80,7 @@ export default function EventLog({
           overflow: "hidden",
           boxShadow: isReplaying
             ? "0 0 24px rgba(236, 72, 153, 0.3), 0 8px 32px rgba(0,0,0,0.5)"
-            : "0 4px 20px rgba(0,0,0,0.35)",
+            : "0 8px 32px rgba(0,0,0,0.45)",
           fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
           transition: "border 0.25s ease",
         }}
@@ -91,47 +91,28 @@ export default function EventLog({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "0.45rem 0.85rem",
+            padding: "0.6rem 1rem",
             background: isReplaying ? "rgba(236, 72, 153, 0.15)" : "#161b22",
-            borderBottom: collapsed ? "none" : "1px solid #21262d",
+            borderBottom: "1px solid #21262d",
             userSelect: "none",
+            flexWrap: "wrap",
             gap: "0.5rem",
           }}
         >
           {/* Left: Window controls + Title */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
-            <div style={{ display: "flex", gap: "5px" }}>
-              <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#ff5f56", display: "inline-block" }} />
-              <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#ffbd2e", display: "inline-block" }} />
-              <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#27c93f", display: "inline-block" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#ff5f56", display: "inline-block" }} />
+              <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#ffbd2e", display: "inline-block" }} />
+              <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#27c93f", display: "inline-block" }} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{ color: isReplaying ? "#EC4899" : "#58a6ff", fontSize: "0.78rem", fontWeight: 700 }}>
-                {isReplaying ? "replay://time-machine" : "terminal://journey-events"}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ color: isReplaying ? "#EC4899" : "#58a6ff", fontSize: "0.82rem", fontWeight: 700 }}>
+                {isReplaying ? "replay://pivotpath/time-machine-active" : "terminal://pivotpath/journey-events.log"}
               </span>
-              <span className="live-dot" style={{ width: "5px", height: "5px", background: isReplaying ? "#EC4899" : "#00D4AA" }} />
+              <span className="live-dot" style={{ width: "6px", height: "6px", background: isReplaying ? "#EC4899" : "#00D4AA" }} />
             </div>
           </div>
-
-          {/* Center: Live Latest Event Ticker (when collapsed) */}
-          {collapsed && latestEvent && (
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontSize: "0.72rem",
-                color: "#8b949e",
-                padding: "0 0.5rem",
-              }}
-              title={`${latestEvent.timestamp} - ${latestEvent.title}: ${latestEvent.detail}`}
-            >
-              <span style={{ color: "#58a6ff" }}>[{latestEvent.timestamp}]</span> {latestEvent.icon}{" "}
-              <strong style={{ color: "#c9d1d9" }}>{latestEvent.title}</strong> &mdash; {latestEvent.detail}
-            </div>
-          )}
 
           {/* Right: Controls & Replay toggle */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>

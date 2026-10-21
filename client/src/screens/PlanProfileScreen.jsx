@@ -3,31 +3,24 @@ import { parseProfile } from "../api/client";
 import { DEFAULT_WEIGHTS, FACTOR_META, PRESET_PROFILES } from "../data/routes";
 
 /**
- * Screen 1 – Plan & Profile (Compact & Dropdown-Driven)
+ * Screen 1 – Plan & Profile
  * Free-text mobility profiling parsed by Local LLM into 5-factor weight matrix.
- * Clean, compact design using dropdown menu and minimal vertical scrolling.
+ * Clean 2-column layout: Profile inputs on left, Priority Matrix & Routes on right.
  */
 export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent }) {
   const [profileText, setProfileText]   = useState("");
   const [summary, setSummary]           = useState("");
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState(null);
-  const [activeSource, setActiveSource] = useState("wheelchair"); // "wheelchair" | "senior" | "standard" | "custom"
+  const [activeSource, setActiveSource] = useState("default"); // "default" | preset id | "ai"
 
   // Convert weight object (0–1 floats) to display percentages
   const displayWeights = Object.fromEntries(
     Object.entries(weights).map(([k, v]) => [k, Math.round(v * 100)])
   );
 
-  // Apply a preset profile instantly from dropdown or button
-  function handlePresetChange(presetId) {
-    if (presetId === "custom") {
-      setActiveSource("custom");
-      return;
-    }
-    const preset = PRESET_PROFILES.find((p) => p.id === presetId);
-    if (!preset) return;
-
+  // Apply a preset profile instantly (no LLM call)
+  function applyPreset(preset) {
     onWeightsChange(preset.weights);
     setProfileText(preset.sampleText);
     setSummary("");
@@ -57,7 +50,7 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
       };
       const total = Object.values(raw).reduce((s, v) => s + v, 0);
       const newWeights = Object.fromEntries(
-        Object.entries(raw).map(([k, v]) => [k, v / (total || 1)])
+        Object.entries(raw).map(([k, v]) => [k, v / total])
       );
       onWeightsChange(newWeights);
       setSummary(result.summary || "");
@@ -77,11 +70,10 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
 
   function handleReset() {
     onWeightsChange(DEFAULT_WEIGHTS);
-    const defaultPreset = PRESET_PROFILES[0];
-    setProfileText(defaultPreset ? defaultPreset.sampleText : "");
+    setProfileText("");
     setSummary("");
     setError(null);
-    setActiveSource("wheelchair");
+    setActiveSource("default");
     onLogEvent?.({
       type: "profile",
       icon: "↺",
@@ -90,93 +82,76 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
     });
   }
 
-  // Active preset info
-  const activePreset = PRESET_PROFILES.find((p) => p.id === activeSource);
-
   // Badge label for the weight matrix header
   const sourceBadge = (() => {
     if (activeSource === "ai") return { label: "✓ AI-Adjusted", cls: "badge-success" };
-    if (activePreset) return { label: `${activePreset.icon} ${activePreset.label}`, cls: "badge-primary" };
-    if (activeSource === "custom") return { label: "✍️ Custom Needs", cls: "badge-warning" };
+    const p = PRESET_PROFILES.find((p) => p.id === activeSource);
+    if (p) return { label: `${p.icon} ${p.label}`, cls: "badge-primary" };
     return { label: "Default", cls: "badge-primary" };
   })();
 
   return (
     <main className="page fade-in-up" id="screen-plan" role="tabpanel" aria-labelledby="tab-plan">
-      {/* ── Compact Header & Toolbar ── */}
-      <div className="compact-header">
-        <div>
-          <h1>Plan & Profile</h1>
-          <p>
-            Choose a preset traveler profile or describe your mobility needs in plain language.
-          </p>
-        </div>
-
-        {/* ── Dropdown Menu: Traveler Profile ── */}
-        <div className="compact-toolbar">
-          <label htmlFor="profile-preset-select" style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
-            Profile:
-          </label>
-          <select
-            id="profile-preset-select"
-            className="select-dropdown"
-            value={activeSource}
-            onChange={(e) => handlePresetChange(e.target.value)}
-            aria-label="Select traveler profile"
-          >
-            {PRESET_PROFILES.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.icon} {p.label}
-              </option>
-            ))}
-            <option value="custom">✍️ Custom AI Needs Prompt</option>
-            {activeSource === "ai" && <option value="ai">✓ AI-Generated Profile</option>}
-          </select>
-        </div>
+      <div className="page-header" style={{ marginBottom: "0.75rem" }}>
+        <h1 style={{ fontSize: "1.45rem", margin: 0, fontWeight: 800 }}>Plan & Profile</h1>
+        <p style={{ fontSize: "0.82rem", color: "var(--color-text-secondary)", marginTop: "0.15rem" }}>
+          Select a preset profile or enter plain English &mdash; on-device Llama 3.1 8B extracts a personalized 5-factor priority matrix.
+        </p>
       </div>
 
-      {/* ── 2-Column Compact Main Grid ── */}
-      <div className="grid-2">
-        {/* Left Column: Profile Needs & AI Parser */}
+      {/* ── 2-Column Responsive Layout ── */}
+      <div className="grid-2" style={{ gap: "1.15rem", alignItems: "start" }}>
+        {/* Left Column: Preset Selection & AI Plain Language Input */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {/* Active Preset Summary Banner */}
-          {activePreset && (
-            <div
-              className="card"
-              style={{
-                background: "rgba(108, 99, 255, 0.06)",
-                borderColor: "rgba(108, 99, 255, 0.3)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0.65rem 0.85rem",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                <span style={{ fontSize: "1.4rem" }}>{activePreset.icon}</span>
-                <div>
-                  <strong style={{ fontSize: "0.88rem", color: "var(--color-primary-light)" }}>
-                    {activePreset.label}
-                  </strong>
-                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
-                    {activePreset.description}
-                  </div>
-                </div>
-              </div>
-              <span className="badge badge-primary" style={{ fontSize: "0.7rem" }}>
-                Active Preset
-              </span>
+          {/* Presets card */}
+          <div className="card" style={{ padding: "0.85rem" }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.6rem", color: "var(--color-text-primary)" }}>
+              Step 1: Choose a Mobility Preset
             </div>
-          )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
+              {PRESET_PROFILES.map((preset) => {
+                const isActive = activeSource === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    id={`preset-${preset.id}`}
+                    onClick={() => applyPreset(preset)}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: "0.25rem",
+                      padding: "0.6rem 0.65rem",
+                      borderRadius: "var(--radius-md)",
+                      border: `1.5px solid ${isActive ? "var(--color-primary)" : "var(--color-border)"}`,
+                      background: isActive ? "rgba(108,99,255,0.12)" : "var(--color-surface-2)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.18s",
+                      fontFamily: "Inter, sans-serif",
+                    }}
+                  >
+                    <div style={{ fontSize: "1.3rem" }}>{preset.icon}</div>
+                    <div style={{ fontWeight: 700, fontSize: "0.82rem", color: isActive ? "var(--color-primary-light)" : "var(--color-text-primary)" }}>
+                      {preset.label}
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", lineHeight: 1.3 }}>
+                      {preset.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          {/* Plain-Language Mobility Input */}
-          <div className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-              <h3 style={{ fontSize: "0.92rem" }}>
-                Describe Mobility Needs in Plain Language
-              </h3>
-              <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>
-                Local Llama 3.1
+          {/* AI input card */}
+          <div className="card" style={{ padding: "0.85rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--color-text-primary)" }}>
+                Step 2: Or Describe in Plain Language
+              </span>
+              <span style={{ fontSize: "0.7rem", color: "var(--color-accent)" }}>
+                ✨ Local Llama 3.1 8B
               </span>
             </div>
 
@@ -184,71 +159,30 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
               id="profile-input"
               className="textarea"
               rows={3}
-              placeholder="e.g. 'I use an electric wheelchair, cannot navigate stairs or curbs, and prefer wide, uncrowded paths.'"
+              placeholder="e.g. 'I use an electric wheelchair and need step-free access and smooth ramps. Avoid heavy crowds.'"
               value={profileText}
-              onChange={(e) => {
-                setProfileText(e.target.value);
-                if (activeSource !== "custom" && activeSource !== "ai") {
-                  setActiveSource("custom");
-                }
-              }}
+              onChange={(e) => setProfileText(e.target.value)}
               disabled={loading}
-              aria-label="Mobility profile description"
-              style={{ fontSize: "0.82rem", lineHeight: 1.4 }}
+              aria-label="Mobility profile text"
+              style={{ fontSize: "0.85rem", padding: "0.6rem", minHeight: "75px" }}
             />
 
-            {/* Quick Prompt Chips */}
-            <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.45rem", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)", alignSelf: "center" }}>
-                Quick:
-              </span>
-              <button
-                type="button"
-                className="tag"
-                style={{ cursor: "pointer", border: "1px solid var(--color-border)" }}
-                onClick={() => {
-                  setProfileText("I use a power wheelchair and need step-free, smooth pavements with dropped kerbs.");
-                  setActiveSource("custom");
-                }}
-              >
-                ♿ Power Wheelchair
-              </button>
-              <button
-                type="button"
-                className="tag"
-                style={{ cursor: "pointer", border: "1px solid var(--color-border)" }}
-                onClick={() => {
-                  setProfileText("I am a senior citizen who walks slowly with a cane. Avoid stairs and steep ramps.");
-                  setActiveSource("custom");
-                }}
-              >
-                👴 Senior with Cane
-              </button>
-              <button
-                type="button"
-                className="tag"
-                style={{ cursor: "pointer", border: "1px solid var(--color-border)" }}
-                onClick={() => {
-                  setProfileText("Commuter on foot with heavy luggage. Need wide paved walkways and low crowd.");
-                  setActiveSource("custom");
-                }}
-              >
-                🧳 Luggage Commuter
-              </button>
-            </div>
-
-            {/* Action Row */}
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.65rem", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
               <button
                 id="btn-parse-profile"
                 className="btn btn-primary"
                 onClick={handleParse}
                 disabled={loading || !profileText.trim()}
+                style={{ fontSize: "0.82rem", padding: "0.45rem 0.9rem" }}
               >
-                {loading ? <><div className="spinner" style={{ width: "16px", height: "16px" }} /> Parsing…</> : "✨ Parse Needs with AI"}
+                {loading ? <><div className="spinner" /> Parsing…</> : "✨ Parse with Local LLM"}
               </button>
-              <button className="btn btn-ghost" onClick={handleReset} style={{ fontSize: "0.78rem" }}>
-                ↺ Reset Default
+              <button
+                className="btn btn-ghost"
+                onClick={handleReset}
+                style={{ fontSize: "0.82rem", padding: "0.45rem 0.75rem" }}
+              >
+                ↺ Reset
               </button>
             </div>
 
@@ -264,26 +198,30 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
 
             {summary && (
               <div style={{
-                marginTop: "0.5rem", padding: "0.55rem 0.75rem", background: "var(--color-surface-2)",
+                marginTop: "0.5rem", padding: "0.5rem 0.65rem", background: "var(--color-surface-2)",
                 borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--color-accent)",
                 fontSize: "0.8rem", color: "var(--color-text-secondary)"
               }}>
-                <strong style={{ color: "var(--color-accent)" }}>AI Parsing Result: </strong>{summary}
+                <strong style={{ color: "var(--color-accent)" }}>AI Summary: </strong>{summary}
               </div>
             )}
           </div>
+
+          {/* Quick How It Works summary strip */}
+          <div className="card" style={{ padding: "0.65rem 0.85rem", background: "rgba(108,99,255,0.03)", borderColor: "rgba(108,99,255,0.18)" }}>
+            <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+              💡 <strong>How it works:</strong> The AI extracts exact weights summing to 100%, dynamically adjusting route ranking scores across Access, Safety, Crowd, Convenience, and Cost.
+            </div>
+          </div>
         </div>
 
-        {/* Right Column: 5-Factor Priority Matrix */}
+        {/* Right Column: Active Priority Matrix & Route Compatibility */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <div className="card">
+          <div className="card" style={{ padding: "0.85rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem" }}>
-              <div>
-                <h3 style={{ fontSize: "0.95rem" }}>5-Factor Priority Matrix</h3>
-                <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
-                  Dynamic route scoring weights (sum = 100%)
-                </div>
-              </div>
+              <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--color-text-primary)" }}>
+                Active Priority Matrix
+              </span>
               <span className={`badge ${sourceBadge.cls}`}>{sourceBadge.label}</span>
             </div>
 
@@ -296,43 +234,60 @@ export default function PlanProfileScreen({ weights, onWeightsChange, onLogEvent
                   <div key={key}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.2rem" }}>
                       <span style={{ fontSize: "0.82rem" }}>
-                        {icon} <strong style={{ color: "var(--color-text-primary)" }}>{label}</strong>
+                        {icon} <strong>{label}</strong>
                         {diff !== 0 && (
                           <span style={{
                             marginLeft: "0.35rem", fontSize: "0.7rem",
                             color: diff > 0 ? "var(--color-success)" : "var(--color-danger)",
-                            fontWeight: 700
+                            fontWeight: 600
                           }}>
-                            {diff > 0 ? `+${diff}%` : `${diff}%`}
+                            {diff > 0 ? `+${diff}` : diff}
                           </span>
                         )}
                       </span>
                       <span style={{ fontWeight: 800, color, fontSize: "0.95rem" }}>{pct}%</span>
                     </div>
-                    <div className="score-bar-track" style={{ height: "5px" }}>
-                      <div
-                        className="score-bar-fill"
-                        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: color }}
-                      />
+                    <div className="score-bar-track" style={{ height: "6px" }}>
+                      <div className="score-bar-fill" style={{ width: `${pct}%`, background: color }} />
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Collapsible Info Toggle */}
-            <details style={{ marginTop: "0.85rem", borderTop: "1px solid var(--color-border)", paddingTop: "0.6rem" }}>
-              <summary style={{ cursor: "pointer", fontSize: "0.76rem", color: "var(--color-primary-light)", fontWeight: 600 }}>
-                💡 How the 5-Factor Scoring Model Works ▾
-              </summary>
-              <div style={{ fontSize: "0.76rem", color: "var(--color-text-secondary)", marginTop: "0.45rem", lineHeight: 1.5 }}>
-                Every Pune route factor score (0–100) is multiplied by its active weight:
-                <br />
-                <code style={{ fontSize: "0.74rem", color: "var(--color-accent)" }}>
-                  Score = (Access × {displayWeights.access}%) + (Safety × {displayWeights.safety}%) + (Crowd × {displayWeights.crowd}%) + (Conv × {displayWeights.convenience}%) + (Cost × {displayWeights.cost}%)
-                </code>
-              </div>
-            </details>
+            {/* Sum check */}
+            <div style={{
+              marginTop: "0.75rem", padding: "0.4rem 0.65rem",
+              background: "var(--color-surface-2)", borderRadius: "var(--radius-sm)",
+              display: "flex", justifyContent: "space-between", fontSize: "0.78rem"
+            }}>
+              <span style={{ color: "var(--color-text-muted)" }}>Total Priority Sum</span>
+              <span style={{ fontWeight: 700, color: "var(--color-success)" }}>
+                {Object.values(displayWeights).reduce((s, v) => s + v, 0)}% (Valid)
+              </span>
+            </div>
+          </div>
+
+          {/* Pune candidate routes compatibility overview */}
+          <div className="card" style={{ padding: "0.85rem" }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--color-text-primary)" }}>
+              🗺️ Pune Corridor Routes Compatibility
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {[
+                { dot: "#6C63FF", name: "Route A — JM Road Direct", note: "⚠️ Stairs & steep curbs. Not wheelchair-suitable." },
+                { dot: "#00D4AA", name: "Route B — Accessible Main Corridor", note: "✓ Step-free: elevator overpasses & tactile paving." },
+                { dot: "#FFB347", name: "Route C — Quiet Backup (Model Colony)", note: "✓ Low crowd residential detour. Fully step-free." },
+              ].map(({ dot, name, note }) => (
+                <div key={name} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", background: "var(--color-surface-2)", padding: "0.45rem 0.6rem", borderRadius: "var(--radius-sm)" }}>
+                  <div style={{ width: "9px", height: "9px", borderRadius: "50%", background: dot, marginTop: "4px", flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-text-primary)" }}>{name}</div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>{note}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

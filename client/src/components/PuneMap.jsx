@@ -73,6 +73,7 @@ export default function PuneMap({
   onRouteClick,
   currentStageIndex = 0,
   activeDisruptions = [],
+  height = "520px",
 }) {
   const currentStage = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
   const center = [
@@ -90,7 +91,7 @@ export default function PuneMap({
       <MapContainer
         center={center}
         zoom={14}
-        style={{ height: "430px", width: "100%", borderRadius: "var(--radius-md)" }}
+        style={{ height, width: "100%", borderRadius: "var(--radius-md)" }}
         scrollWheelZoom
       >
         <TileLayer

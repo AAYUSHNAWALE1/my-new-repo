@@ -12,11 +12,13 @@ import {
 const NORMAL_SCENARIO = SCENARIOS.find((s) => s.id === "normal");
 
 /**
- * Screen 2 – Journey & Map (Compact & Dropdown-Driven)
- * Clean split-view layout:
- * - Mid-journey position tracking via compact dropdown
- * - Route focus via compact dropdown or 1-click switcher
- * - Side-by-side map and route intelligence with minimal scrolling
+ * Screen 2 – Journey & Map (Clean Split-Screen Dashboard)
+ * Features:
+ * - Side-by-side dashboard layout (zero unnecessary scrolling on desktop)
+ * - Mid-journey position tracking with segment-level re-ranking
+ * - Completed segments locked out (traveler never sent back to start)
+ * - Shared central disruption alerts & staff override badges
+ * - Anti-thrashing switching threshold
  */
 export default function JourneyMapScreen({
   weights,
@@ -52,7 +54,7 @@ export default function JourneyMapScreen({
     });
   }, [weights, disruptions, currentStageIndex]);
 
-  // Ranked by weighted score descending
+  // Sorted by weighted score descending
   const ranked = useMemo(
     () => [...routeData].sort((a, b) => b.weightedScore - a.weightedScore),
     [routeData]
@@ -63,7 +65,6 @@ export default function JourneyMapScreen({
   }, [routeData]);
 
   const selectedData = routeData.find((d) => d.route.id === activeRouteId) || routeData[0];
-  const topRouteData = ranked[0];
 
   // Completed segments for traveler's current stage
   const completedSegments = SEGMENTS.filter((s) =>
@@ -72,107 +73,250 @@ export default function JourneyMapScreen({
 
   return (
     <main className="page fade-in-up" id="screen-journey" role="tabpanel" aria-labelledby="tab-journey">
-      {/* ── Compact Header & Toolbar ── */}
-      <div className="compact-header">
+      {/* ── Compact Header & Stepper Bar ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.65rem" }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <h1>Journey & Map</h1>
-            <span className="badge badge-primary" style={{ fontSize: "0.72rem" }}>
-              Pune Corridor
-            </span>
+          <h1 style={{ fontSize: "1.45rem", margin: 0, fontWeight: 800 }}>Journey & Map</h1>
+          <div style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", marginTop: "0.15rem" }}>
+            🚉 <strong>Pune Railway Station</strong> ➔ 🎓 <strong>Fergusson College</strong> &bull; Mid-journey dynamic re-ranking & anti-backtracking lock
           </div>
-          <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-            🚉 Pune Railway Station → 🎓 Fergusson College &bull; Dynamic re-ranking from live position
-          </p>
         </div>
 
-        {/* ── Controls Toolbar: Position Dropdown + Route Focus Dropdown + Weather ── */}
-        <div className="compact-toolbar">
-          {/* Position Selector Dropdown */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-            <label htmlFor="journey-stage-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
-              📍 Position:
-            </label>
-            <select
-              id="journey-stage-select"
-              className="select-dropdown"
-              value={currentStageIndex}
-              onChange={(e) => onStageChange?.(Number(e.target.value))}
-              aria-label="Mid-journey position"
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+          {/* Central disruptions indicator */}
+          {disruptions.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.45rem",
+                padding: "0.3rem 0.65rem",
+                borderRadius: "999px",
+                background: "rgba(255, 179, 71, 0.15)",
+                border: "1px solid rgba(255, 179, 71, 0.4)",
+                fontSize: "0.75rem",
+                color: "var(--color-warning)",
+                fontWeight: 700,
+              }}
             >
-              {JOURNEY_STAGES.map((stg) => (
-                <option key={stg.id} value={stg.stage}>
-                  {stg.stage === 0 ? "🚉" : stg.stage === 3 ? "🎓" : "📍"} {stg.name} ({stg.progressPct}%)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Route Focus Dropdown */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-            <label htmlFor="route-focus-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
-              Route:
-            </label>
-            <select
-              id="route-focus-select"
-              className="select-dropdown"
-              value={activeRouteId}
-              onChange={(e) => onSelectRoute?.(e.target.value)}
-              aria-label="Active route focus"
-            >
-              {ranked.map(({ route, weightedScore, remainingEtaMin }, idx) => (
-                <option key={route.id} value={route.id}>
-                  #{idx + 1} {route.shortName} &mdash; Score: {weightedScore} ({remainingEtaMin}m)
-                </option>
-              ))}
-            </select>
-          </div>
-
+              <span>🚨 {disruptions.length} Obstacle{disruptions.length > 1 ? "s" : ""}</span>
+              {onClearDisruptions && (
+                <button
+                  onClick={onClearDisruptions}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--color-warning)",
+                    cursor: "pointer",
+                    fontSize: "0.75rem",
+                    textDecoration: "underline",
+                    padding: 0,
+                    marginLeft: "0.2rem",
+                  }}
+                  title="Clear disruptions to baseline"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
           <WeatherWidget />
         </div>
       </div>
 
-      {/* ── Central Disruption Store Alert Bar (if any) ── */}
-      {disruptions.length > 0 && (
-        <div
-          style={{
-            marginBottom: "0.65rem",
-            padding: "0.45rem 0.85rem",
-            background: "rgba(255, 179, 71, 0.10)",
-            border: "1px solid rgba(255, 179, 71, 0.35)",
-            borderRadius: "var(--radius-sm)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            fontSize: "0.8rem",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span>🚨</span>
-            <span style={{ fontWeight: 600, color: "var(--color-warning)" }}>
-              {disruptions.length} Active Central Disruption{disruptions.length > 1 ? "s" : ""}:
+      {/* ── Mid-Journey Position Tracker Bar ── */}
+      <div
+        className="card"
+        style={{
+          padding: "0.5rem 0.85rem",
+          marginBottom: "0.85rem",
+          borderColor: "rgba(0, 212, 170, 0.3)",
+          background: "rgba(0, 212, 170, 0.04)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "1.1rem" }}>📍</span>
+          <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--color-text-primary)" }}>
+            Position: <span style={{ color: "var(--color-accent)" }}>{currentStage.name}</span> ({currentStage.progressPct}%)
+          </span>
+          {completedSegments.length > 0 && (
+            <span style={{ fontSize: "0.74rem", color: "#34D399", background: "rgba(52, 211, 153, 0.12)", padding: "0.15rem 0.5rem", borderRadius: "4px" }}>
+              🛡️ {completedSegments.map((s) => s.shortName).join(", ")} locked
             </span>
-            <span style={{ color: "var(--color-text-secondary)" }}>
-              {disruptions.map((d) => `${d.hazardEmoji} ${d.segmentName}`).join(", ")}
-            </span>
-          </div>
-          {onClearDisruptions && (
-            <button
-              onClick={onClearDisruptions}
-              className="btn btn-ghost"
-              style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}
-            >
-              🔄 Clear All
-            </button>
           )}
         </div>
-      )}
 
-      {/* ── Side-by-Side Main Split View (Fits Viewport) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.9fr", gap: "1rem", alignItems: "start" }}>
-        {/* Left Column: Interactive Pune Map */}
+        <div style={{ display: "flex", gap: "0.35rem" }}>
+          {JOURNEY_STAGES.map((stg) => {
+            const isCurrent = stg.stage === currentStageIndex;
+            const isPast = stg.stage < currentStageIndex;
+            return (
+              <button
+                key={stg.id}
+                onClick={() => onStageChange?.(stg.stage)}
+                style={{
+                  padding: "0.25rem 0.6rem",
+                  borderRadius: "999px",
+                  fontSize: "0.74rem",
+                  fontWeight: isCurrent ? 700 : 500,
+                  border: isCurrent
+                    ? "1.5px solid #00D4AA"
+                    : isPast
+                      ? "1px solid rgba(52, 211, 153, 0.4)"
+                      : "1px solid var(--color-border)",
+                  background: isCurrent
+                    ? "rgba(0, 212, 170, 0.2)"
+                    : isPast
+                      ? "rgba(52, 211, 153, 0.08)"
+                      : "var(--color-surface-2)",
+                  color: isCurrent ? "#00D4AA" : isPast ? "#34D399" : "var(--color-text-muted)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {isPast ? "✓ " : ""}{stg.shortLabel}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Main Dashboard: Left (Routes & Inspector) | Right (Interactive Map) ── */}
+      <div className="dashboard-layout">
+        {/* Left Side Panel: Route Candidates & Selected Inspection */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-muted)" }}>
+              Candidate Routes (Ranked)
+            </span>
+            <span style={{ fontSize: "0.72rem", color: "var(--color-accent)", fontWeight: 600 }}>
+              ⚖️ Anti-Thrashing: +{SWITCHING_THRESHOLD} pts
+            </span>
+          </div>
+
+          {/* 3 Candidate Routes in sleek list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+            {ranked.map(({ route, weightedScore, remainingEtaMin, relevantDisruptions, hasActiveBlocker }, rank) => {
+              const isSelected = activeRouteId === route.id;
+
+              return (
+                <div
+                  key={route.id}
+                  onClick={() => onSelectRoute(route.id)}
+                  style={{
+                    background: isSelected ? "var(--color-surface-2)" : "var(--color-surface)",
+                    border: isSelected
+                      ? `1.5px solid ${route.color}`
+                      : "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "0.75rem 0.85rem",
+                    cursor: "pointer",
+                    transition: "all 0.18s ease",
+                    boxShadow: isSelected ? `0 0 16px ${route.color}25` : "none",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "1rem" }}>{rank === 0 ? "🥇" : rank === 1 ? "🥈" : "🥉"}</span>
+                      <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: route.color, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "0.88rem", color: isSelected ? "#fff" : "var(--color-text-primary)" }}>
+                          {route.shortName}
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>
+                          ~{remainingEtaMin} min &bull; {route.hasBarriers ? "⚠️ Stairs" : "✓ Step-free"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      {hasActiveBlocker && (
+                        <span className="badge badge-danger" style={{ fontSize: "0.62rem", padding: "0.15rem 0.4rem" }}>
+                          🚫 Blocked
+                        </span>
+                      )}
+                      <div
+                        style={{
+                          background: `linear-gradient(135deg, ${route.color}cc, ${route.color})`,
+                          color: "#fff",
+                          fontWeight: 800,
+                          fontSize: "0.95rem",
+                          padding: "0.2rem 0.55rem",
+                          borderRadius: "var(--radius-sm)",
+                          minWidth: "40px",
+                          textAlign: "center",
+                        }}
+                      >
+                        {weightedScore}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active disruption badge */}
+                  {relevantDisruptions.length > 0 && (
+                    <div style={{
+                      marginTop: "0.35rem", fontSize: "0.72rem", color: "var(--color-warning)",
+                      background: "rgba(255,179,71,0.1)", borderRadius: "4px", padding: "0.15rem 0.4rem"
+                    }}>
+                      🚨 {relevantDisruptions.map((d) => `${d.hazardEmoji} ${d.hazardLabel}`).join(", ")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Selected Route Inspector & Factor Bars */}
+          {selectedData && (
+            <div className="card" style={{ padding: "0.85rem", borderColor: `${selectedData.route.color}44` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.82rem", fontWeight: 700, color: selectedData.route.color }}>
+                  📊 {selectedData.route.shortName} Breakdown
+                </span>
+                <span className="badge badge-primary" style={{ fontSize: "0.65rem" }}>
+                  ~{selectedData.remainingEtaMin} min rem.
+                </span>
+              </div>
+
+              {/* Segment checklist */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginBottom: "0.65rem", background: "var(--color-surface-2)", padding: "0.5rem", borderRadius: "var(--radius-sm)" }}>
+                {selectedData.completedSegments.map((seg) => (
+                  <div key={seg.id} style={{ fontSize: "0.73rem", color: "#34D399", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <span>✓</span>
+                    <span style={{ textDecoration: "line-through", opacity: 0.8 }}>{seg.name}</span>
+                    <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>(Locked)</span>
+                  </div>
+                ))}
+                {selectedData.remainingSegments.map((seg) => {
+                  const segDisruption = selectedData.relevantDisruptions.find((d) => d.segmentId === seg.id);
+                  return (
+                    <div key={seg.id} style={{ fontSize: "0.73rem", color: segDisruption ? "var(--color-danger)" : "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      <span>{segDisruption ? "🚨" : "⏳"}</span>
+                      <span><strong>{seg.name}</strong> (~{seg.baseMinutes}m)</span>
+                      {segDisruption && (
+                        <span style={{ fontSize: "0.65rem", color: "var(--color-danger)" }}>
+                          ({segDisruption.hazardEmoji} {segDisruption.hazardLabel})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Score bars */}
+              <ScoreBars scores={selectedData.factorScores} compact />
+            </div>
+          )}
+        </div>
+
+        {/* Right Panel: Interactive Map */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+          <div className="card" style={{ padding: "0.35rem", overflow: "hidden" }}>
             <PuneMap
               routes={ROUTES}
               selectedRouteId={activeRouteId}
@@ -180,186 +324,32 @@ export default function JourneyMapScreen({
               onRouteClick={onSelectRoute}
               currentStageIndex={currentStageIndex}
               activeDisruptions={disruptions}
+              height="510px"
             />
           </div>
 
-          {/* Completed Segment Guarantee Pill */}
+          {/* Map bottom legend info strip */}
           <div
             style={{
-              padding: "0.4rem 0.75rem",
-              background: "rgba(52, 211, 153, 0.08)",
-              border: "1px solid rgba(52, 211, 153, 0.25)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "0.76rem",
-              color: "#34D399",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <span>🛡️</span>
-              <span>
-                {completedSegments.length > 0 ? (
-                  <>
-                    <strong>Locked legs:</strong> {completedSegments.map((s) => s.shortName).join(", ")}. Backtracking forbidden.
-                  </>
-                ) : (
-                  <>
-                    <strong>Origin:</strong> Full corridor ahead. Candidate routes ranked for complete journey.
-                  </>
-                )}
-              </span>
-            </div>
-            <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>
-              {currentStage.progressPct}% Complete
-            </span>
-          </div>
-        </div>
-
-        {/* Right Column: Active Route Detail & Fast Candidate Switcher */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-          {/* Active Selected Route Detail Card */}
-          <div
-            className="card"
-            style={{
-              borderColor: selectedData.route.color,
-              background: `linear-gradient(180deg, ${selectedData.route.color}11, var(--color-surface))`,
-              padding: "0.85rem 1rem",
-            }}
-          >
-            {/* Header: Name, Rank & Score Badge */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: selectedData.route.color }} />
-                  <strong style={{ fontSize: "1rem", color: "var(--color-text-primary)" }}>
-                    {selectedData.route.shortName}
-                  </strong>
-                  {selectedData.route.id === topRouteData.route.id && (
-                    <span className="badge badge-success" style={{ fontSize: "0.68rem" }}>
-                      ⭐ #1 Recommended
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: "0.76rem", color: "var(--color-text-muted)", marginTop: "0.15rem" }}>
-                  {selectedData.route.via} &bull; {selectedData.remainingEtaMin} min remaining
-                </div>
-              </div>
-
-              {/* Large Score Pill */}
-              <div
-                style={{
-                  background: `linear-gradient(135deg, ${selectedData.route.color}, var(--color-primary-light))`,
-                  color: "#fff",
-                  fontSize: "1.15rem",
-                  fontWeight: 800,
-                  padding: "0.3rem 0.75rem",
-                  borderRadius: "var(--radius-sm)",
-                  minWidth: "52px",
-                  textAlign: "center",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-                }}
-              >
-                {selectedData.weightedScore}
-              </div>
-            </div>
-
-            {/* Accessibility Tags */}
-            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
-              <span className={`tag ${selectedData.route.hasBarriers ? "badge-danger" : "badge-success"}`} style={{ fontSize: "0.7rem" }}>
-                {selectedData.route.hasBarriers ? "⚠️ Physical Barriers" : "♿ Step-Free Accessible"}
-              </span>
-              <span className="tag" style={{ fontSize: "0.7rem" }}>
-                ⏱ ETA: {selectedData.remainingEtaMin} min
-              </span>
-              {selectedData.hasActiveBlocker && (
-                <span className="badge badge-danger" style={{ fontSize: "0.7rem" }}>
-                  🚫 Obstacle on Active Path
-                </span>
-              )}
-            </div>
-
-            {/* 5-Factor Score Breakdown */}
-            <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.55rem" }}>
-              <div style={{ fontSize: "0.74rem", fontWeight: 600, color: "var(--color-text-muted)", marginBottom: "0.4rem" }}>
-                5-Factor Score Matrix:
-              </div>
-              <ScoreBars factorScores={selectedData.factorScores} />
-            </div>
-          </div>
-
-          {/* Quick-Switch Mini Rows for All 3 Candidate Routes */}
-          <div className="card" style={{ padding: "0.65rem 0.85rem" }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-secondary)", marginBottom: "0.45rem", display: "flex", justifyContent: "space-between" }}>
-              <span>Compare All Candidate Paths:</span>
-              <span style={{ color: "var(--color-text-muted)" }}>Click to focus</span>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              {ranked.map(({ route, weightedScore, remainingEtaMin, hasActiveBlocker }, idx) => {
-                const isSelected = route.id === activeRouteId;
-                return (
-                  <button
-                    key={route.id}
-                    onClick={() => onSelectRoute?.(route.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "0.35rem 0.65rem",
-                      borderRadius: "var(--radius-sm)",
-                      border: `1px solid ${isSelected ? route.color : "var(--color-border)"}`,
-                      background: isSelected ? `${route.color}1a` : "var(--color-surface-2)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: "var(--color-text-primary)",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.74rem", fontWeight: 800, color: idx === 0 ? "var(--color-success)" : "var(--color-text-muted)" }}>
-                        #{idx + 1}
-                      </span>
-                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: route.color }} />
-                      <div>
-                        <div style={{ fontSize: "0.78rem", fontWeight: isSelected ? 700 : 500 }}>
-                          {route.shortName}
-                        </div>
-                        <div style={{ fontSize: "0.68rem", color: "var(--color-text-muted)" }}>
-                          {remainingEtaMin} min &bull; {route.hasBarriers ? "Stairs" : "Step-free"}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                      {hasActiveBlocker && <span style={{ fontSize: "0.75rem" }}>🚨</span>}
-                      <span style={{ fontWeight: 800, fontSize: "0.88rem", color: route.color }}>
-                        {weightedScore}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Anti-Thrashing Policy Info */}
-          <div
-            style={{
-              padding: "0.4rem 0.65rem",
+              padding: "0.4rem 0.85rem",
               background: "var(--color-surface-2)",
               borderRadius: "var(--radius-sm)",
               border: "1px solid var(--color-border)",
-              fontSize: "0.72rem",
+              fontSize: "0.75rem",
               color: "var(--color-text-muted)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.5rem",
             }}
           >
-            <span>⚖️ <strong>Anti-Thrashing Rule:</strong> ≥ +{SWITCHING_THRESHOLD} pts required to reroute</span>
-            <span style={{ color: "var(--color-accent)" }}>Active Route Locked</span>
+            <div style={{ display: "flex", gap: "0.85rem", alignItems: "center" }}>
+              <span>🚉 <strong>Origin:</strong> Station</span>
+              <span>🎓 <strong>Destination:</strong> Fergusson College</span>
+              <span>📍 <strong>GPS:</strong> Live Stage Marker</span>
+            </div>
+            <span>📐 <strong>Formula:</strong> Score = Σ (Factor × Weight)</span>
           </div>
         </div>
       </div>
