@@ -397,6 +397,74 @@ async function runAllTests() {
     "Invalid segmentId correctly rejected with 400",
     `Expected 400, got ${badSegment.status}`);
 
+  subheader("7g: Report Structure — Source, Confidence Level, Expiry Time");
+  const structuredReport = await request("POST", "/api/disruptions", {
+    segmentId: "seg-model-colony",
+    hazardType: "blocked-ramp",
+    source: "traveler",
+    confidence: "medium",
+    ttlMinutes: 45,
+    note: "Delivery scooter parked across ramp",
+  });
+  const dObj = structuredReport.body.disruption;
+  assert(
+    dObj &&
+    (dObj.source === "traveler" || dObj.source === "station_staff") &&
+    typeof dObj.confidence === "string" &&
+    typeof dObj.expiresAt === "number" &&
+    dObj.expiresAt > Date.now() &&
+    Boolean(dObj.expiresAtISO),
+    `Report includes source (${dObj?.source}), confidence (${dObj?.confidence}), and expiry (${new Date(dObj?.expiresAt).toLocaleTimeString()})`,
+    "Report failed schema requirements for source, confidence, or expiry time"
+  );
+
+  subheader("7h: Stale (Expired) Reports Automatically Stop Affecting Route Scores");
+  // Route B baseline is 85. If an expired elevator failure is passed, score MUST remain 85.
+  const expiredDisruption = {
+    id: "stale-1",
+    segmentId: "seg-metro-overpass",
+    affectedRoutes: ["accessible-main"],
+    hazardType: "broken-lift",
+    hazardLabel: "Elevator Failure",
+    source: "traveler",
+    confidence: "high",
+    scoreDeltas: { access: -58, safety: -5, convenience: -10 },
+    expiresAt: Date.now() - 10000, // Expired 10 seconds ago!
+  };
+  const targetRouteB = ROUTES.find(r => r.id === "accessible-main");
+  const evalStale = evaluateMidJourneyRoute(targetRouteB, 1, [expiredDisruption], {}, DEFAULT_WEIGHTS);
+  assert(
+    evalStale.weightedScore === 85 && evalStale.hasActiveBlocker === false,
+    `Stale report ignored: Route B score remains ${evalStale.weightedScore} (expected 85, not penalized to 63)`,
+    `Stale report incorrectly affected score: got ${evalStale.weightedScore}`
+  );
+
+  subheader("7i: Active Staff Report Overrides Conflicting Traveler Report on Same Segment");
+  await request("DELETE", "/api/disruptions");
+  // 1. Traveler reports flooded footpath (-20)
+  await request("POST", "/api/disruptions", {
+    segmentId: "seg-metro-overpass",
+    hazardType: "flooded-path",
+    source: "traveler",
+    confidence: "low",
+  });
+  // 2. Station staff reports broken lift (-58) on the same segment
+  await request("POST", "/api/disruptions", {
+    segmentId: "seg-metro-overpass",
+    hazardType: "broken-lift",
+    source: "station_staff",
+    confidence: "high",
+  });
+  const conflictGet = await request("GET", "/api/disruptions");
+  assert(
+    conflictGet.body.count === 1 &&
+    conflictGet.body.disruptions[0].source === "station_staff" &&
+    conflictGet.body.overridden.length === 1 &&
+    conflictGet.body.overridden[0].source === "traveler",
+    "Staff report overrides conflicting traveler report on the same segment",
+    "Staff report failed to override traveler report"
+  );
+
   // ═══════════════════════════════════════════════════════════════════════════
   // TEST 8: FEATURE 7 — MID-JOURNEY RE-RANKING & SEGMENT LOCKING
   // ═══════════════════════════════════════════════════════════════════════════

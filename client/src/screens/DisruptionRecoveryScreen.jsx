@@ -22,6 +22,7 @@ export default function DisruptionRecoveryScreen({
   weights,
   onLogEvent,
   disruptions = [],
+  overriddenDisruptions = [],
   onReportDisruption,
   onResolveStaff,
   onClearDisruptions,
@@ -44,6 +45,24 @@ export default function DisruptionRecoveryScreen({
   const [ttlMinutes, setTtlMinutes]             = useState(60);
   const [hazardNote, setHazardNote]             = useState("");
   const [submittingHazard, setSubmittingHazard] = useState(false);
+
+  // Expiry time formatting helper
+  function formatExpiry(expiresAt) {
+    const diffMs = expiresAt - Date.now();
+    if (diffMs <= 0) return "Stale / Expired (Scores Unaffected)";
+    const diffMin = Math.max(1, Math.round(diffMs / 60000));
+    const timeStr = new Date(expiresAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    return `${timeStr} (in ~${diffMin} min)`;
+  }
+
+  // Confidence level formatting helper
+  function formatConfidence(conf, source) {
+    if (source === "station_staff") return "High (100% Authoritative)";
+    if (conf === "high") return "High (95%)";
+    if (conf === "medium") return "Medium (70%)";
+    if (conf === "low") return "Low (40%)";
+    return String(conf);
+  }
 
   const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId) || SCENARIOS[0];
   const currentStage   = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
@@ -455,7 +474,7 @@ export default function DisruptionRecoveryScreen({
                     }}
                     style={{ fontSize: "0.82rem", padding: "0.4rem 0.6rem" }}
                   >
-                    <option value="station_staff">👮 Staff (Authoritative)</option>
+                    <option value="station_staff">👮 Station Staff (Overrides Traveler)</option>
                     <option value="traveler">👤 Traveler Community</option>
                   </select>
                 </div>
@@ -476,6 +495,41 @@ export default function DisruptionRecoveryScreen({
                     <option value="construction">🚧 Construction (-30)</option>
                     <option value="missing-curb">⚠️ Missing Curb (-20)</option>
                     <option value="blocked-ramp">🚫 Blocked Ramp (-25)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.2rem" }}>
+                    Confidence Level
+                  </label>
+                  <select
+                    className="input"
+                    value={confidence}
+                    onChange={(e) => setConfidence(e.target.value)}
+                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.6rem" }}
+                  >
+                    <option value="high">High (95% - Verified)</option>
+                    <option value="medium">Medium (70% - Visual)</option>
+                    <option value="low">Low (40% - Unverified)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.2rem" }}>
+                    Expiry Time (TTL)
+                  </label>
+                  <select
+                    className="input"
+                    value={ttlMinutes}
+                    onChange={(e) => setTtlMinutes(Number(e.target.value))}
+                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.6rem" }}
+                  >
+                    <option value={15}>15 Minutes (Temporary)</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={60}>60 Minutes (Standard)</option>
+                    <option value={180}>180 Minutes (Staff Shift)</option>
                   </select>
                 </div>
               </div>
@@ -504,7 +558,7 @@ export default function DisruptionRecoveryScreen({
                   onClick={handleQuickStaffResolve}
                   className="btn btn-primary"
                   style={{ background: "#238636", borderColor: "#2ea043", fontSize: "0.8rem", padding: "0.4rem 0.75rem" }}
-                  title="Station staff marks elevator operational"
+                  title="Station staff marks elevator operational, overriding traveler reports"
                 >
                   🛠️ Staff Fix
                 </button>
@@ -512,11 +566,11 @@ export default function DisruptionRecoveryScreen({
             </form>
           </div>
 
-          {/* Active Disruptions List */}
+          {/* Active Central Disruptions List */}
           <div className="card" style={{ padding: "0.85rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <span style={{ fontSize: "0.82rem", fontWeight: 700 }}>Active Central Reports</span>
+                <span style={{ fontSize: "0.82rem", fontWeight: 700 }}>Active Reports (Affecting Scores)</span>
                 <div className="live-dot" />
                 <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>
                   ({disruptions.length})
@@ -536,11 +590,11 @@ export default function DisruptionRecoveryScreen({
             </div>
 
             {disruptions.length === 0 ? (
-              <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", textAlign: "center", padding: "1rem 0" }}>
-                No active obstacles. All segments operating normally. ✨
+              <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", textAlign: "center", padding: "0.85rem 0" }}>
+                No active obstacles. Stale reports automatically purged &bull; All segments operating normally. ✨
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "190px", overflowY: "auto" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "180px", overflowY: "auto" }}>
                 {disruptions.map((h) => {
                   const isStaff = h.source === "station_staff";
                   return (
@@ -549,22 +603,38 @@ export default function DisruptionRecoveryScreen({
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "0.4rem 0.6rem",
+                        alignItems: "flex-start",
+                        padding: "0.45rem 0.6rem",
                         background: isStaff ? "rgba(56, 189, 248, 0.08)" : "var(--color-surface-2)",
                         borderRadius: "4px",
                         border: isStaff ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid var(--color-border)",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "0.45rem", minWidth: 0, flex: 1 }}>
                         <span style={{ fontSize: "1.1rem" }}>{h.hazardEmoji}</span>
-                        <div>
-                          <div style={{ fontSize: "0.78rem", fontWeight: 700, color: isStaff ? "#38BDF8" : "inherit" }}>
-                            {h.hazardLabel} &bull; <span style={{ fontWeight: 400, opacity: 0.8 }}>{h.segmentName || h.segmentId}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "0.8rem", color: isStaff ? "#38BDF8" : "inherit" }}>
+                              {h.hazardLabel} &bull; <span style={{ fontWeight: 400, opacity: 0.85 }}>{h.segmentName || h.segmentId}</span>
+                            </strong>
+                            <span
+                              className={`badge ${isStaff ? "badge-primary" : "badge-secondary"}`}
+                              style={{ fontSize: "0.62rem", padding: "0.1rem 0.4rem" }}
+                            >
+                              {isStaff ? "👮 Staff (Override)" : "👤 Traveler"}
+                            </span>
                           </div>
-                          <div style={{ fontSize: "0.68rem", color: "var(--color-text-muted)" }}>
-                            {isStaff ? "👮 Staff Verified" : "👤 Traveler"} &bull; Exp: {new Date(h.expiresAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+
+                          <div style={{ fontSize: "0.7rem", color: "var(--color-text-secondary)", marginTop: "0.15rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                            <span><strong>Confidence:</strong> {formatConfidence(h.confidence, h.source)}</span>
+                            <span><strong>Expiry:</strong> {formatExpiry(h.expiresAt)}</span>
                           </div>
+
+                          {h.note && (
+                            <div style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", marginTop: "0.15rem", fontStyle: "italic" }}>
+                              "{h.note}"
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -573,7 +643,7 @@ export default function DisruptionRecoveryScreen({
                           onClick={() => onDeleteDisruption(h.id)}
                           style={{
                             background: "none", border: "none", color: "var(--color-text-muted)",
-                            cursor: "pointer", fontSize: "0.75rem", padding: "0.2rem"
+                            cursor: "pointer", fontSize: "0.75rem", padding: "0.1rem 0.25rem", marginLeft: "0.3rem"
                           }}
                           title="Dismiss report"
                         >
@@ -586,6 +656,45 @@ export default function DisruptionRecoveryScreen({
               </div>
             )}
           </div>
+
+          {/* Overridden / Suppressed Reports Section (Requirement 3: Staff Override) */}
+          {overriddenDisruptions.length > 0 && (
+            <div className="card" style={{ padding: "0.75rem 0.85rem", background: "rgba(236, 72, 153, 0.04)", borderColor: "rgba(236, 72, 153, 0.25)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.4rem" }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#EC4899" }}>
+                  ⛔ Suppressed Reports (Overridden by Station Staff)
+                </span>
+                <span className="badge" style={{ background: "rgba(236,72,153,0.15)", color: "#EC4899", fontSize: "0.62rem" }}>
+                  {overriddenDisruptions.length} Suppressed
+                </span>
+              </div>
+              <p style={{ fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.4rem" }}>
+                Staff directives take authoritative precedence. The following community reports are suppressed and have <strong>zero impact</strong> on route scores:
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: "120px", overflowY: "auto" }}>
+                {overriddenDisruptions.map((o) => (
+                  <div
+                    key={o.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.35rem 0.5rem",
+                      background: "rgba(255,255,255,0.02)",
+                      borderRadius: "4px",
+                      fontSize: "0.72rem",
+                      color: "var(--color-text-muted)",
+                    }}
+                  >
+                    <span>{o.hazardEmoji} <strong>{o.hazardLabel}</strong> on {o.segmentName || o.segmentId} ({o.source})</span>
+                    <span style={{ color: "#EC4899", fontWeight: 600, fontSize: "0.68rem" }}>
+                      ✓ Overridden by Staff
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

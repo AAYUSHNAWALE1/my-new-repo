@@ -165,11 +165,37 @@ export function evaluateMidJourneyRoute(
 
   // Find active disruptions on the remaining segments of this route
   const remainingSegmentIds = remaining.map((s) => s.id);
-  const relevantDisruptions = activeDisruptions.filter((d) =>
-    remainingSegmentIds.includes(d.segmentId) && d.affectedRoutes.includes(route.id)
-  );
+  const now = Date.now();
 
-  // Compute total penalties from disruptions on remaining segments
+  // 1. Filter out stale/expired reports (Stale reports must stop affecting scores!)
+  const nonStaleDisruptions = activeDisruptions.filter((d) => {
+    if (d.expiresAt && d.expiresAt <= now) return false;
+    return remainingSegmentIds.includes(d.segmentId) && d.affectedRoutes.includes(route.id);
+  });
+
+  // 2. Staff reports must strictly override traveler reports on each segment
+  const bySegment = {};
+  for (const d of nonStaleDisruptions) {
+    if (!bySegment[d.segmentId]) bySegment[d.segmentId] = [];
+    bySegment[d.segmentId].push(d);
+  }
+
+  const relevantDisruptions = [];
+  for (const [, reports] of Object.entries(bySegment)) {
+    const staffReport = reports.find((r) => r.source === "station_staff");
+    if (staffReport) {
+      if (staffReport.status !== "cleared") {
+        // Staff confirmed obstacle takes authoritative precedence
+        relevantDisruptions.push(staffReport);
+      }
+      // If staffReport.status === "cleared", all traveler reports on this segment are suppressed!
+    } else {
+      // Traveler reports only (exclude any cleared)
+      relevantDisruptions.push(...reports.filter((r) => r.status !== "cleared"));
+    }
+  }
+
+  // Compute total penalties from effective disruptions on remaining segments
   const disruptionDeltas = { access: 0, safety: 0, crowd: 0, convenience: 0, cost: 0 };
   let hasActiveBlocker = false;
 

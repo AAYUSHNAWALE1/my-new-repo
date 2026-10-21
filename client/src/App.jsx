@@ -38,6 +38,7 @@ export default function App() {
   const [weights, setWeights]                       = useState(DEFAULT_WEIGHTS);
   const [eventLog, setEventLog]                     = useState([]);
   const [disruptions, setDisruptions]               = useState([]);
+  const [overriddenDisruptions, setOverriddenDisruptions] = useState([]);
   const [activeScenarioId, setActiveScenarioId]     = useState("normal");
 
   // Active success toast notification (e.g. after accepting route)
@@ -85,6 +86,7 @@ export default function App() {
     try {
       const data = await fetchDisruptions();
       const newDisruptions = data.disruptions || [];
+      const newOverridden  = data.overridden || [];
       setDisruptions((prev) => {
         if (JSON.stringify(prev) === JSON.stringify(newDisruptions)) {
           return prev;
@@ -92,6 +94,7 @@ export default function App() {
         dismissedRouteRef.current = null;
         return newDisruptions;
       });
+      setOverriddenDisruptions(newOverridden);
     } catch {
       // Server offline in dev
     }
@@ -448,6 +451,7 @@ export default function App() {
         <DisruptionRecoveryScreen
           weights={effectiveWeights}
           disruptions={effectiveDisruptions}
+          overriddenDisruptions={overriddenDisruptions}
           activeScenarioId={activeScenarioId}
           onScenarioChange={(id) => {
             dismissedRouteRef.current = null;
