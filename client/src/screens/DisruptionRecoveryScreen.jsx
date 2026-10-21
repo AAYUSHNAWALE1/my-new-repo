@@ -156,14 +156,11 @@ export default function DisruptionRecoveryScreen({
       , ROUTES[0]);
 
       const data = await fetchRecoveryExplanation({
-        scenario: scenario.label,
         scenarioName: scenario.label,
         disruptedRouteName: "Accessible Main Corridor",
-        recommendedRoute: recommendedRoute.shortName,
         recommendedRouteName: recommendedRoute.shortName,
         beforeScores,
         afterScores: freshAfterScores,
-        stageName: currentStage.name,
         userWeights: weights,
         disruptionReason: `${scenario.description} Evaluated from position: ${currentStage.name}.`,
       });
@@ -190,7 +187,7 @@ export default function DisruptionRecoveryScreen({
     }
   }
 
-  // Auto-generate explanation if a scenario is already active on mount
+  // Auto-fetch concise explanation if a scenario is active on mount
   useEffect(() => {
     if (activeScenarioId && activeScenarioId !== "normal" && !explanation && !loadingAI) {
       handleScenarioChange(activeScenarioId);
@@ -313,50 +310,112 @@ export default function DisruptionRecoveryScreen({
         </div>
       </div>
 
-      {/* ── AI Recovery Explanation (if active) ── */}
-      {activeScenarioId !== "normal" && (
-        <div
-          className="card"
-          style={{
-            padding: "0.75rem 0.95rem",
-            marginBottom: "0.85rem",
-            borderColor: "rgba(0,212,170,0.3)",
-            background: "rgba(0,212,170,0.04)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.45rem", flexWrap: "wrap", gap: "0.5rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-              <span>🤖</span>
-              <strong style={{ fontSize: "0.85rem", color: "var(--color-accent)" }}>
-                AI Recovery Explanation:
-              </strong>
-              {loadingAI && <div className="spinner" style={{ width: "14px", height: "14px" }} />}
+      {/* ── Concise AI Recovery Briefing ── */}
+      {(() => {
+        const isDisrupted = activeScenarioId !== "normal" || disruptions.length > 0;
+        return (
+          <div
+            className="card"
+            style={{
+              padding: "0.75rem 1rem",
+              marginBottom: "0.85rem",
+              borderColor: isDisrupted ? "rgba(255,107,107,0.35)" : "rgba(0,212,170,0.35)",
+              background: isDisrupted ? "rgba(255,107,107,0.04)" : "rgba(0,212,170,0.04)",
+              borderRadius: "var(--radius-md)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.45rem",
+            }}
+          >
+            {/* Header row */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontSize: "1.05rem" }}>{isDisrupted ? "🚨" : "🤖"}</span>
+                <strong style={{ fontSize: "0.86rem", color: isDisrupted ? "var(--color-danger)" : "var(--color-accent)" }}>
+                  AI Recovery Briefing
+                </strong>
+                <span className={`badge ${isDisrupted ? "badge-danger" : "badge-success"}`} style={{ fontSize: "0.62rem" }}>
+                  {isDisrupted ? "⚡ Reroute Recommended" : "✓ Baseline Optimal"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)" }}>
+                  {loadingAI
+                    ? "Consulting Llama 3.1 8B…"
+                    : aiProvider === "ollama"
+                    ? "✨ Llama 3.1 8B"
+                    : "🛡️ Dynamic Engine"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleScenarioChange(activeScenarioId)}
+                  disabled={loadingAI}
+                  title="Re-run AI explanation"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--color-border)",
+                    color: "var(--color-text-secondary)",
+                    borderRadius: "4px",
+                    padding: "0.15rem 0.45rem",
+                    fontSize: "0.68rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  ↺ Refresh
+                </button>
+              </div>
             </div>
-            <span
-              className={`badge ${aiProvider === "ollama" ? "badge-primary" : "badge-secondary"}`}
-              style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}
-            >
-              {loadingAI
-                ? "Consulting Llama 3.1 8B…"
-                : aiProvider === "ollama"
-                ? "Llama 3.1 8B (Live)"
-                : "Dynamic Safety Engine"}
-            </span>
+
+            {/* Explanation text */}
+            {loadingAI ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", padding: "0.2rem 0" }}>
+                <div className="skeleton" style={{ height: "13px", width: "94%" }} />
+                <div className="skeleton" style={{ height: "13px", width: "65%" }} />
+              </div>
+            ) : aiError ? (
+              <div style={{ fontSize: "0.78rem", color: "var(--color-warning)" }}>⚠️ {aiError}</div>
+            ) : (
+              <div style={{ fontSize: "0.84rem", lineHeight: 1.45, color: "var(--color-text-primary)" }}>
+                {explanation || (
+                  isDisrupted
+                    ? `Obstacle detected on current corridor. Diverting to ${bestRouteAfter.shortName} for continuous step-free accessibility.`
+                    : "All corridor segments operating normally. Route B (Accessible Main) is optimal with continuous step-free overpass access."
+                )}
+              </div>
+            )}
+
+            {/* Concise Key Decision Highlights */}
+            <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", marginTop: "0.15rem" }}>
+              {isDisrupted ? (
+                <>
+                  <span className="badge badge-secondary" style={{ fontSize: "0.66rem" }}>
+                    🛑 Hazard: {activeScenarioId !== "normal" ? activeScenario.label : `${disruptions.length} report(s)`}
+                  </span>
+                  <span className="badge badge-primary" style={{ fontSize: "0.66rem" }}>
+                    ✓ Recommended: {bestRouteAfter.shortName}
+                  </span>
+                  <span className="badge badge-success" style={{ fontSize: "0.66rem" }}>
+                    ⏱️ ~{bestRouteAfter.remainingEtaMin} min remaining
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="badge badge-primary" style={{ fontSize: "0.66rem" }}>
+                    ♿ 100% Step-Free & Tactile
+                  </span>
+                  <span className="badge badge-secondary" style={{ fontSize: "0.66rem" }}>
+                    🛡️ Safety: 90 / 100
+                  </span>
+                  <span className="badge badge-success" style={{ fontSize: "0.66rem" }}>
+                    ⏱️ 26 min ETA
+                  </span>
+                </>
+              )}
+            </div>
           </div>
-          {loadingAI ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", padding: "0.2rem 0" }}>
-              <div className="skeleton" style={{ height: "13px", width: "95%" }} />
-              <div className="skeleton" style={{ height: "13px", width: "65%" }} />
-            </div>
-          ) : explanation ? (
-            <p style={{ fontSize: "0.84rem", lineHeight: 1.5, color: "var(--color-text-secondary)", margin: 0 }}>
-              {explanation}
-            </p>
-          ) : aiError ? (
-            <p style={{ fontSize: "0.78rem", color: "var(--color-warning)", margin: 0 }}>⚠️ {aiError}</p>
-          ) : null}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 2-Column Responsive Split Layout ── */}
       <div className="grid-2" style={{ gap: "1.15rem", alignItems: "start" }}>

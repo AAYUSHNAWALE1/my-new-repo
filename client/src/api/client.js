@@ -47,12 +47,12 @@ export async function parseProfile(profileText) {
 
 /**
  * Get AI-generated plain-language recovery explanation.
- * @param {string|object} scenarioOrOptions
- * @param {string} [recommendedRoute]
- * @param {object} [beforeScores]
- * @param {object} [afterScores]
+ * @param {string} scenario
+ * @param {string} recommendedRoute
+ * @param {object} beforeScores
+ * @param {object} afterScores
  * @param {string} [stageName]
- * @returns {Promise<{ explanation: string, provider: string }>}
+ * @returns {{ explanation: string, provider: string }}
  */
 export async function fetchRecoveryExplanation(scenarioOrOptions, recommendedRoute, beforeScores, afterScores, stageName = "") {
   let body;
@@ -64,9 +64,7 @@ export async function fetchRecoveryExplanation(scenarioOrOptions, recommendedRou
       beforeScores: opts.beforeScores || {},
       afterScores: opts.afterScores || {},
       stageName: opts.stageName || opts.stage || "",
-      disruptedRouteName: opts.disruptedRouteName || "",
-      disruptionReason: opts.disruptionReason || "",
-      timeout: opts.timeout || 16000,
+      timeout: opts.timeout || 3500,
     };
   } else {
     body = {
@@ -75,7 +73,7 @@ export async function fetchRecoveryExplanation(scenarioOrOptions, recommendedRou
       beforeScores: beforeScores || {},
       afterScores: afterScores || {},
       stageName: stageName || "",
-      timeout: 16000,
+      timeout: 3500,
     };
   }
 

@@ -31,13 +31,12 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "summary": "<one sentence plain-language summary of the user's profile>"
 }`;
 
-const RECOVERY_SYSTEM_PROMPT = `You are an accessibility routing assistant for PivotPath.
-
-Given a disruption scenario and route scoring data, generate a short, empathetic, plain-language explanation (2-3 sentences) for a wheelchair user or mobility-impaired traveler explaining:
-1. What changed and why the route rankings shifted.
-2. Which route is now recommended and why it is the best accessible option given the disruption.
-
-Be clear, reassuring, and specific. Avoid jargon. Return ONLY the plain-language explanation text — no JSON, no markdown.`;
+const RECOVERY_SYSTEM_PROMPT = `You are PivotPath's accessibility routing AI assistant in Pune.
+Given a disruption and route shift, generate an ULTRA-CONCISE 1 to 2 sentence explanation (strictly UNDER 25 WORDS TOTAL).
+Include:
+1. What failed (e.g. elevator blocked).
+2. Recommended route switch & accessibility reason (e.g. step-free, no lifts).
+Return ONLY the plain text. Strictly NO filler, pleasantries, or markdown. Limit to 25 words.`;
 
 // ── Smart Fallbacks (when Ollama is offline or uninstalled) ───────────────────
 
@@ -107,16 +106,17 @@ function fallbackParseProfile(text) {
 
 function fallbackRecoveryExplanation(scenario, recommendedRoute, beforeScores, afterScores, stageName = "") {
   const atPosition = stageName ? ` from ${stageName}` : "";
-  if (scenario.toLowerCase().includes("barrier") || scenario.toLowerCase().includes("elevator") || scenario.toLowerCase().includes("lift")) {
-    return `An elevator malfunction or physical curb barrier on the Accessible Main Corridor has made that section impassable for wheelchairs. We recommend immediately diverting${atPosition} to ${recommendedRoute}. This route avoids all mechanical lifts, offers continuous step-free pavements through Model Colony, and adds only a minor detour.`;
+  const s = String(scenario).toLowerCase();
+  if (s.includes("barrier") || s.includes("elevator") || s.includes("lift")) {
+    return `Elevator blocked on Route B. Divert${atPosition} to ${recommendedRoute} — 100% step-free path through Model Colony with zero mechanical lifts.`;
   }
-  if (scenario.toLowerCase().includes("rain") || scenario.toLowerCase().includes("flood")) {
-    return `Heavy monsoon rains have caused surface waterlogging along the open JM Road corridor. We have re-routed you${atPosition} to ${recommendedRoute}, which provides covered footpaths, slip-resistant tactile paving, and protected crossings.`;
+  if (s.includes("rain") || s.includes("flood")) {
+    return `Heavy monsoon flooding along JM Road. Switch${atPosition} to ${recommendedRoute} for covered footpaths, tactile paving, and protected crossings.`;
   }
-  if (scenario.toLowerCase().includes("crowd")) {
-    return `Significant crowd congestion was detected along the main arterial corridor. To ensure safe navigation, we recommend switching${atPosition} to ${recommendedRoute}, offering quieter residential sidewalks and minimal pedestrian resistance.`;
+  if (s.includes("crowd")) {
+    return `Crowd congestion on main arterial road. Divert${atPosition} to ${recommendedRoute} for calm residential sidewalks and clear wheelchair paths.`;
   }
-  return `A route disruption occurred. Based on your mobility profile, ${recommendedRoute} is currently the optimal accessible alternative with the highest safety and accessibility score${atPosition}.`;
+  return `Obstacle detected ahead. Switch${atPosition} to ${recommendedRoute} — optimal accessible alternative with highest safety score.`;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -192,11 +192,11 @@ router.post("/parse-profile", async (req, res) => {
  * Returns: { explanation: string }
  */
 router.post("/recovery-explanation", async (req, res) => {
-  let scenario = req.body.scenario || req.body.scenarioName;
+  let scenario = req.body.scenario || req.body.scenarioName || "";
   if (typeof scenario === "object" && scenario !== null) {
     scenario = scenario.label || scenario.name || scenario.id || "";
   }
-  let recommendedRoute = req.body.recommendedRoute || req.body.recommendedRouteName;
+  let recommendedRoute = req.body.recommendedRoute || req.body.recommendedRouteName || "";
   if (typeof recommendedRoute === "object" && recommendedRoute !== null) {
     recommendedRoute = recommendedRoute.shortName || recommendedRoute.name || recommendedRoute.id || "";
   }
@@ -214,9 +214,9 @@ router.post("/recovery-explanation", async (req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const userMessage = `Disruption scenario: ${scenario}
-Stage/Position: ${stageName || "Mid-journey"}
-Recommended route after disruption: ${recommendedRoute}
+    const userMessage = `Disruption: ${scenario}
+Position: ${stageName || "Mid-journey"}
+Recommended: ${recommendedRoute}
 Before scores: ${JSON.stringify(beforeScores)}
 After scores:  ${JSON.stringify(afterScores)}`;
 
@@ -227,8 +227,8 @@ After scores:  ${JSON.stringify(afterScores)}`;
         { role: "user", content: userMessage },
       ],
       options: {
-        num_predict: 90,
-        temperature: 0.3,
+        num_predict: 45,
+        temperature: 0.2,
       },
       stream: false,
     };
@@ -249,7 +249,7 @@ After scores:  ${JSON.stringify(afterScores)}`;
       }
     }
   } catch {
-    // Ollama offline / timed out → use smart fallback
+    // Ollama offline or timed out → use smart fallback
   }
 
   const explanation = fallbackRecoveryExplanation(scenario, recommendedRoute, beforeScores, afterScores, stageName);
