@@ -5,7 +5,7 @@ import JourneyMapScreen from "./screens/JourneyMapScreen";
 import DisruptionRecoveryScreen from "./screens/DisruptionRecoveryScreen";
 import EventLog from "./components/EventLog";
 import HandsFreePrompt from "./components/HandsFreePrompt";
-import { DEFAULT_WEIGHTS, ROUTES } from "./data/routes";
+import { DEFAULT_WEIGHTS, ROUTES, SCENARIOS } from "./data/routes";
 import { JOURNEY_STAGES, SWITCHING_THRESHOLD, evaluateMidJourneyRoute } from "./data/segments";
 import {
   fetchDisruptions,
@@ -38,6 +38,7 @@ export default function App() {
   const [weights, setWeights]                       = useState(DEFAULT_WEIGHTS);
   const [eventLog, setEventLog]                     = useState([]);
   const [disruptions, setDisruptions]               = useState([]);
+  const [activeScenarioId, setActiveScenarioId]     = useState("normal");
 
   // Active success toast notification (e.g. after accepting route)
   const [activeBanner, setActiveBanner]             = useState(null);
@@ -83,7 +84,14 @@ export default function App() {
   const loadDisruptions = useCallback(async () => {
     try {
       const data = await fetchDisruptions();
-      setDisruptions(data.disruptions || []);
+      const newDisruptions = data.disruptions || [];
+      setDisruptions((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(newDisruptions)) {
+          return prev;
+        }
+        dismissedRouteRef.current = null;
+        return newDisruptions;
+      });
     } catch {
       // Server offline in dev
     }
@@ -96,9 +104,11 @@ export default function App() {
     return () => clearInterval(timer);
   }, [loadDisruptions]);
 
+  const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId) || SCENARIOS[0];
+
   // ── Global Multi-Window Reroute Monitor (Requirement 2 & 5) ─────────────────
-  // Whenever central disruptions update from ANY browser window, evaluate if the
-  // traveler's active route is compromised and trigger Hands-Free Prompt!
+  // Whenever central disruptions or active scenario update, evaluate if the
+  // traveler's active route is compromised and trigger Route Recovery Modal!
   useEffect(() => {
     if (isReplaying) return;
 
@@ -107,7 +117,7 @@ export default function App() {
         r,
         currentStageIndex,
         disruptions,
-        {},
+        activeScenario.scoreDeltas[r.id] || {},
         weights
       );
       return { route: r, ...evalRes };
@@ -122,10 +132,11 @@ export default function App() {
       const isBlocked = activeEval.hasActiveBlocker;
 
       if (scoreDiff >= SWITCHING_THRESHOLD || isBlocked) {
-        if (dismissedRouteRef.current !== topEval.route.id && (!handsFreeSuggestion || handsFreeSuggestion.newRoute.id !== topEval.route.id)) {
+        const suggestionKey = `${activeEval.route.id}->${topEval.route.id}`;
+        if (dismissedRouteRef.current !== suggestionKey && (!handsFreeSuggestion || handsFreeSuggestion.newRoute.id !== topEval.route.id)) {
           const reason = isBlocked
-            ? `Central Alert: Critical obstacle / lift failure detected on ${activeEval.route.shortName}. Score dropped to ${activeEval.weightedScore}.`
-            : `Central Alert: ${topEval.route.shortName} (Score: ${topEval.weightedScore}) outperforms ${activeEval.route.shortName} (Score: ${activeEval.weightedScore}) by ${scoreDiff} points.`;
+            ? `Critical obstacle / lift failure detected on ${activeEval.route.shortName}. Score dropped to ${activeEval.weightedScore}.`
+            : `${topEval.route.shortName} (Score: ${topEval.weightedScore}) outperforms ${activeEval.route.shortName} (Score: ${activeEval.weightedScore}) by ${scoreDiff} points.`;
 
           setHandsFreeSuggestion({
             currentRoute: activeEval.route,
@@ -137,10 +148,12 @@ export default function App() {
         }
       }
     } else {
-      // If active route is top route again, reset dismissed tracker
-      dismissedRouteRef.current = null;
+      // If traveler is already on top route, dismiss any pending suggestion for this route
+      if (handsFreeSuggestion && handsFreeSuggestion.newRoute.id === activeRouteId) {
+        setHandsFreeSuggestion(null);
+      }
     }
-  }, [disruptions, currentStageIndex, activeRouteId, weights, isReplaying, handsFreeSuggestion]);
+  }, [disruptions, currentStageIndex, activeRouteId, weights, isReplaying, activeScenario, handsFreeSuggestion]);
 
   // Handle mid-journey stage position changes
   const handleStageChange = useCallback(
@@ -236,6 +249,26 @@ export default function App() {
     [handleLogEvent]
   );
 
+  // Handle profile / weights change cleanly
+  const handleWeightsChange = useCallback((newWeights) => {
+    setWeights(newWeights);
+    // Find best baseline route for this new profile
+    const bestRoute = ROUTES.reduce((best, r) => {
+      const score = Math.round(
+        Object.entries(newWeights).reduce((sum, [k, w]) => sum + (r.scores[k] ?? 0) * w, 0)
+      );
+      const bestScore = Math.round(
+        Object.entries(newWeights).reduce((sum, [k, w]) => sum + (best.scores[k] ?? 0) * w, 0)
+      );
+      return score > bestScore ? r : best;
+    }, ROUTES[0]);
+
+    setActiveRouteId(bestRoute.id);
+    setActiveScenarioId("normal");
+    setHandsFreeSuggestion(null);
+    dismissedRouteRef.current = null;
+  }, []);
+
   // ── Hands-Free Recovery Actions (Requirement 5) ─────────────────────────────
   const handleAcceptSuggestion = useCallback(() => {
     if (!handsFreeSuggestion) return;
@@ -267,14 +300,14 @@ export default function App() {
     if (!handsFreeSuggestion) return;
     const { currentRoute, newRoute } = handsFreeSuggestion;
 
-    dismissedRouteRef.current = newRoute.id;
+    dismissedRouteRef.current = `${currentRoute.id}->${newRoute.id}`;
     setHandsFreeSuggestion(null);
 
     handleLogEvent({
       type: "handsfree",
       icon: "✋",
-      title: `Route Recovery Rejected: Kept ${currentRoute.shortName}`,
-      detail: `Traveler chose to remain on ${currentRoute.shortName} despite disruption on ${newRoute.shortName}.`,
+      title: `Route Recovery Dismissed: Kept ${currentRoute.shortName}`,
+      detail: `Traveler chose to remain on ${currentRoute.shortName} despite disruption alert. This alert will not reappear unless conditions change.`,
     });
   }, [handsFreeSuggestion, handleLogEvent]);
 
@@ -394,7 +427,7 @@ export default function App() {
       {activeScreen === "plan" && (
         <PlanProfileScreen
           weights={effectiveWeights}
-          onWeightsChange={setWeights}
+          onWeightsChange={handleWeightsChange}
           onLogEvent={handleLogEvent}
         />
       )}
@@ -415,6 +448,11 @@ export default function App() {
         <DisruptionRecoveryScreen
           weights={effectiveWeights}
           disruptions={effectiveDisruptions}
+          activeScenarioId={activeScenarioId}
+          onScenarioChange={(id) => {
+            dismissedRouteRef.current = null;
+            setActiveScenarioId(id);
+          }}
           onReportDisruption={handleReportDisruption}
           onResolveStaff={handleResolveStaff}
           onClearDisruptions={handleClearDisruptions}
@@ -423,7 +461,6 @@ export default function App() {
           onStageChange={handleStageChange}
           activeRouteId={effectiveRouteId}
           onLogEvent={handleLogEvent}
-          onSuggestRouteChange={setHandsFreeSuggestion}
         />
       )}
 

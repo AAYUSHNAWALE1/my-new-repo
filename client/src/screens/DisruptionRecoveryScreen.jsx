@@ -29,9 +29,9 @@ export default function DisruptionRecoveryScreen({
   currentStageIndex = 0,
   onStageChange,
   activeRouteId = "accessible-main",
-  onSuggestRouteChange,
+  activeScenarioId = "normal",
+  onScenarioChange,
 }) {
-  const [activeScenarioId, setActiveScenarioId] = useState("barrier-blocked");
   const [explanation, setExplanation]           = useState("");
   const [loadingAI, setLoadingAI]               = useState(false);
   const [aiError, setAiError]                   = useState(null);
@@ -45,7 +45,7 @@ export default function DisruptionRecoveryScreen({
   const [hazardNote, setHazardNote]             = useState("");
   const [submittingHazard, setSubmittingHazard] = useState(false);
 
-  const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId);
+  const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId) || SCENARIOS[0];
   const currentStage   = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
 
   // Baseline data: clean route BEFORE any disruptions evaluated from current position
@@ -87,34 +87,8 @@ export default function DisruptionRecoveryScreen({
     , ROUTES[0]);
   }, [afterData]);
 
-  // Check if route recommendation changed and exceeds switching threshold
-  useEffect(() => {
-    if (activeScenarioId === "normal" && disruptions.length === 0) return;
-
-    const currentRoute = ROUTES.find((r) => r.id === activeRouteId) || ROUTES[1];
-    const newTopRoute = bestRouteAfter;
-
-    // Check if new route beats current route significantly (or current route is blocked)
-    const scoreDiff = afterData[newTopRoute.id].weightedScore - afterData[currentRoute.id].weightedScore;
-    const currentIsBlocked = afterData[currentRoute.id].hasActiveBlocker;
-
-    if (newTopRoute.id !== currentRoute.id && (scoreDiff >= SWITCHING_THRESHOLD || currentIsBlocked)) {
-      const reason = currentIsBlocked
-        ? `Physical blocker / lift failure detected on ${currentRoute.shortName}. Score dropped to ${afterData[currentRoute.id].weightedScore}.`
-        : `${newTopRoute.shortName} score (${afterData[newTopRoute.id].weightedScore}) outperforms ${currentRoute.shortName} (${afterData[currentRoute.id].weightedScore}) by ${scoreDiff} points (threshold: ${SWITCHING_THRESHOLD}).`;
-
-      onSuggestRouteChange?.({
-        currentRoute,
-        newRoute: newTopRoute,
-        reason,
-        oldScore: afterData[currentRoute.id].weightedScore,
-        newScore: afterData[newTopRoute.id].weightedScore,
-      });
-    }
-  }, [activeScenarioId, bestRouteAfter, afterData, activeRouteId, disruptions, onSuggestRouteChange]);
-
   async function handleScenarioChange(id) {
-    setActiveScenarioId(id);
+    onScenarioChange?.(id);
     setExplanation("");
     setAiError(null);
 
