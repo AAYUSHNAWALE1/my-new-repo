@@ -1,0 +1,24 @@
+{
+  "name": "pivotpath-wayfarer",
+  "version": "1.0.0",
+  "description": "PivotPath Wayfarer – Context-Aware Accessible Route Pivot Engine for Pune",
+  "type": "module",
+  "scripts": {
+    "test": "node test_comprehensive.mjs",
+    "test:priya": "node test_priya_journey.mjs",
+    "test:all": "node test_comprehensive.mjs && node test_priya_journey.mjs",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build"
+  },
+  "keywords": [
+    "accessibility",
+    "routing",
+    "wayfinding",
+    "pune",
+    "wheelchair",
+    "resilience"
+  ],
+  "author": "PivotPath Team",
+  "license": "MIT"
+}

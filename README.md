@@ -180,7 +180,41 @@ Open **`http://localhost:5173`** in your browser to start using PivotPath.
 
 ## 🧪 Testing & Demo Guide
 
-PivotPath includes built-in scenario simulators and cross-client synchronization to demonstrate all accessibility capabilities:
+### Automated End-to-End & Stress Test Suites
+
+PivotPath includes comprehensive automated test suites covering all 7 core features, edge cases, and live mid-journey scenarios:
+
+```bash
+# Run comprehensive 15-test, 91-assertion production readiness test suite
+npm test
+
+# Run Priya's live mid-journey elevator failure & restoration test
+npm run test:priya
+
+# Run all test suites back-to-back
+npm run test:all
+```
+
+#### What `npm test` Validates (91 Passed / 0 Failed):
+1. **API Endpoints & Health Check:** `/api/health`, `/api/weather`, `/api/disruptions`.
+2. **5-Factor Weighted Scoring Math:** Mathematical verification that weights sum to 1.0 and exact route scores match across Wheelchair, Senior, and Standard profiles.
+3. **Three Candidate Routes & Baselines:** Baseline Route B (85) > Route C (83) > Route A (58 stairs penalty).
+4. **Disruption Scenarios & PPT Slide 8 Math:** Exact delta verification (Route B access drops from 96 → 38, total drops from 85 → 65, promoting Route C to #1).
+5. **AI Profile Parsing (Feature 1):** Natural language parsing with normalization to 100% and fallback resilience.
+6. **AI Recovery Explanation (Feature 5):** Context-aware human-readable detour briefings.
+7. **Central Disruption Store (Feature 6):** Creation, TTL expiration, route filtering, and staff override suppression of traveler reports.
+8. **Mid-Journey Re-Ranking & Segment Locking (Feature 7):** Prevents rerouting travelers backward across traversed segments.
+9. **Anti-Thrashing Threshold:** Enforces $\ge 5$ point switching margin to prevent erratic route oscillation.
+10. **Stress — Cascading Failures:** Graceful degradation when multiple route segments fail simultaneously.
+11. **Stress — Rapid-Fire Disruption Reports:** High-concurrency report handling without race conditions.
+12. **Stress — Double Staff Override:** Idempotent authority verification.
+13. **Full Priya Journey (E2E Integration):** Complete 6-step simulation of a power-wheelchair user encountering mid-journey failures and staff restorations.
+14. **Segment Catalog Integrity:** Topological validation of segments and routes across Pune corridor.
+15. **Score Boundary Edge Cases:** Zero weights, single factor saturation, and clamping [0, 100].
+
+---
+
+### Manual Interactive Testing Guide
 
 ### Test Case 1: Plain-Language AI Profiling
 1. Navigate to the **Plan & Profile** screen.
