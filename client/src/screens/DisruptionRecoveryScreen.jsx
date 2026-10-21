@@ -403,27 +403,17 @@ export default function DisruptionRecoveryScreen({
                       padding: "0.35rem 0.55rem", borderRadius: "4px"
                     }}>
                       <div style={{ fontSize: "0.65rem", color: "var(--color-text-muted)", textTransform: "uppercase" }}>After</div>
-                      <div style={{
-                        fontSize: "1.2rem", fontWeight: 800,
-                        color: after.weightedScore < before.weightedScore ? "var(--color-danger)" : after.weightedScore > before.weightedScore ? "var(--color-success)" : "inherit"
-                      }}>
+                      <div
+                        style={{
+                          fontSize: "1.2rem",
+                          fontWeight: 800,
+                          color: after.weightedScore < before.weightedScore ? "var(--color-danger)" : after.weightedScore > before.weightedScore ? "var(--color-success)" : "inherit"
+                        }}
+                      >
                         {after.weightedScore}
                       </div>
                     </div>
                   </div>
-
-                  {/* Slide 8 Math Callout */}
-                  {route.id === "accessible-main" && activeScenarioId === "barrier-blocked" && (
-                    <div
-                      style={{
-                        marginTop: "0.45rem", padding: "0.4rem 0.65rem",
-                        background: "rgba(255,107,107,0.08)", borderRadius: "var(--radius-sm)",
-                        borderLeft: "3px solid var(--color-danger)", fontSize: "0.76rem", color: "var(--color-danger)"
-                      }}
-                    >
-                      🛗 <strong>Slide 8 PPT Match:</strong> Elevator failure dropped Route B Access <strong>96 → 38</strong>. Total score dropped <strong>85 → 65</strong>. Route C (Quiet Backup, <strong>Score: 83, 34 min</strong>) promoted to 🥇 #1.
-                    </div>
-                  )}
                 </div>
               );
             })}
