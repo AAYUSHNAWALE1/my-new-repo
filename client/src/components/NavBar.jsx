@@ -1,5 +1,5 @@
 /**
- * Navigation bar with screen tabs and PivotPath logo.
+ * Navigation bar with screen tabs, dropdown menu for mobile, and PivotPath brand.
  * @param {{ activeScreen, onScreenChange }} props
  */
 const TABS = [
@@ -18,22 +18,23 @@ export default function NavBar({ activeScreen, onScreenChange }) {
           display: "flex",
           alignItems: "center",
           background: "#ffffff",
-          padding: "4px 14px",
-          borderRadius: "8px",
-          boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+          padding: "3px 12px",
+          borderRadius: "6px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
         }}
       >
         <img
           src="/logo.png"
           alt="PivotPath"
           style={{
-            height: "32px",
+            height: "26px",
             objectFit: "contain",
             display: "block",
           }}
         />
       </div>
 
+      {/* Desktop Screen Navigation Tabs */}
       <ul className="nav-tabs" role="tablist">
         {TABS.map((tab) => (
           <li key={tab.id} role="presentation">
@@ -50,6 +51,24 @@ export default function NavBar({ activeScreen, onScreenChange }) {
           </li>
         ))}
       </ul>
+
+      {/* Mobile / Responsive Dropdown Menu */}
+      <div className="nav-mobile-dropdown">
+        <select
+          id="screen-select-dropdown"
+          className="select-dropdown"
+          value={activeScreen}
+          onChange={(e) => onScreenChange(e.target.value)}
+          aria-label="Select screen"
+          style={{ padding: "0.35rem 2rem 0.35rem 0.65rem", fontSize: "0.8rem" }}
+        >
+          {TABS.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </nav>
   );
 }

@@ -1,10 +1,9 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import PuneMap from "../components/PuneMap";
-import RouteCard from "../components/RouteCard";
 import WeatherWidget from "../components/WeatherWidget";
 import ScoreBars from "../components/ScoreBars";
 import {
-  ROUTES, SCENARIOS, DEFAULT_WEIGHTS,
+  ROUTES, SCENARIOS,
 } from "../data/routes";
 import {
   JOURNEY_STAGES, SEGMENTS, SWITCHING_THRESHOLD, evaluateMidJourneyRoute
@@ -13,12 +12,11 @@ import {
 const NORMAL_SCENARIO = SCENARIOS.find((s) => s.id === "normal");
 
 /**
- * Screen 2 – Journey & Map
- * Features:
- * - Mid-journey position tracking with segment-level re-ranking
- * - Completed segments locked out (traveler never sent back to start)
- * - Shared central disruption alerts & staff override badges
- * - Anti-thrashing switching threshold
+ * Screen 2 – Journey & Map (Compact & Dropdown-Driven)
+ * Clean split-view layout:
+ * - Mid-journey position tracking via compact dropdown
+ * - Route focus via compact dropdown or 1-click switcher
+ * - Side-by-side map and route intelligence with minimal scrolling
  */
 export default function JourneyMapScreen({
   weights,
@@ -54,7 +52,7 @@ export default function JourneyMapScreen({
     });
   }, [weights, disruptions, currentStageIndex]);
 
-  // Sorted by weighted score descending
+  // Ranked by weighted score descending
   const ranked = useMemo(
     () => [...routeData].sort((a, b) => b.weightedScore - a.weightedScore),
     [routeData]
@@ -65,7 +63,7 @@ export default function JourneyMapScreen({
   }, [routeData]);
 
   const selectedData = routeData.find((d) => d.route.id === activeRouteId) || routeData[0];
-  const topRoute = ranked[0];
+  const topRouteData = ranked[0];
 
   // Completed segments for traveler's current stage
   const completedSegments = SEGMENTS.filter((s) =>
@@ -74,283 +72,297 @@ export default function JourneyMapScreen({
 
   return (
     <main className="page fade-in-up" id="screen-journey" role="tabpanel" aria-labelledby="tab-journey">
-      <div className="page-header">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
-          <div>
+      {/* ── Compact Header & Toolbar ── */}
+      <div className="compact-header">
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <h1>Journey & Map</h1>
-            <p>
-              🚉 <strong>Pune Railway Station</strong> → 🎓 <strong>Fergusson College</strong> &mdash;
-              Track your live position and re-rank candidate paths only from where you are onward.
-            </p>
+            <span className="badge badge-primary" style={{ fontSize: "0.72rem" }}>
+              Pune Corridor
+            </span>
           </div>
+          <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+            🚉 Pune Railway Station → 🎓 Fergusson College &bull; Dynamic re-ranking from live position
+          </p>
+        </div>
+
+        {/* ── Controls Toolbar: Position Dropdown + Route Focus Dropdown + Weather ── */}
+        <div className="compact-toolbar">
+          {/* Position Selector Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <label htmlFor="journey-stage-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              📍 Position:
+            </label>
+            <select
+              id="journey-stage-select"
+              className="select-dropdown"
+              value={currentStageIndex}
+              onChange={(e) => onStageChange?.(Number(e.target.value))}
+              aria-label="Mid-journey position"
+            >
+              {JOURNEY_STAGES.map((stg) => (
+                <option key={stg.id} value={stg.stage}>
+                  {stg.stage === 0 ? "🚉" : stg.stage === 3 ? "🎓" : "📍"} {stg.name} ({stg.progressPct}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Route Focus Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <label htmlFor="route-focus-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              Route:
+            </label>
+            <select
+              id="route-focus-select"
+              className="select-dropdown"
+              value={activeRouteId}
+              onChange={(e) => onSelectRoute?.(e.target.value)}
+              aria-label="Active route focus"
+            >
+              {ranked.map(({ route, weightedScore, remainingEtaMin }, idx) => (
+                <option key={route.id} value={route.id}>
+                  #{idx + 1} {route.shortName} &mdash; Score: {weightedScore} ({remainingEtaMin}m)
+                </option>
+              ))}
+            </select>
+          </div>
+
           <WeatherWidget />
         </div>
       </div>
 
-      {/* ── Mid-Journey Position Tracker & Segment Controller (Requirement 1) ── */}
-      <div
-        className="card"
-        style={{
-          marginBottom: "1.25rem",
-          borderColor: "rgba(0, 212, 170, 0.3)",
-          background: "rgba(0, 212, 170, 0.03)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontSize: "1.3rem" }}>📍</span>
-            <div>
-              <strong style={{ fontSize: "0.95rem", color: "var(--color-text-primary)" }}>
-                Mid-Journey Position Tracker: {currentStage.name}
-              </strong>
-              <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
-                {currentStage.progressPct}% complete &bull; {currentStage.landmark}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {JOURNEY_STAGES.map((stg) => {
-              const isCurrent = stg.stage === currentStageIndex;
-              const isPast = stg.stage < currentStageIndex;
-              return (
-                <button
-                  key={stg.id}
-                  onClick={() => onStageChange?.(stg.stage)}
-                  style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "999px",
-                    fontSize: "0.76rem",
-                    fontWeight: isCurrent ? 700 : 500,
-                    border: isCurrent
-                      ? "1.5px solid #00D4AA"
-                      : isPast
-                        ? "1px solid rgba(52, 211, 153, 0.4)"
-                        : "1px solid var(--color-border)",
-                    background: isCurrent
-                      ? "rgba(0, 212, 170, 0.18)"
-                      : isPast
-                        ? "rgba(52, 211, 153, 0.08)"
-                        : "var(--color-surface-2)",
-                    color: isCurrent ? "#00D4AA" : isPast ? "#34D399" : "var(--color-text-muted)",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  {isPast ? "✓ " : ""}{stg.shortLabel}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Completed Segment Guarantee Banner */}
-        {completedSegments.length > 0 && (
-          <div
-            style={{
-              padding: "0.5rem 0.85rem",
-              background: "rgba(52, 211, 153, 0.08)",
-              borderLeft: "3px solid #34D399",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "0.8rem",
-              color: "#34D399",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span>🛡️</span>
-            <span>
-              <strong>Completed segment locked:</strong>{" "}
-              {completedSegments.map((s) => s.shortName).join(", ")}. Candidate routes re-ranked only from your current position onward &mdash; you will <strong>never</strong> be routed back to the start!
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* ── Central Disruption Store Banner (Requirement 2 & 3) ── */}
+      {/* ── Central Disruption Store Alert Bar (if any) ── */}
       {disruptions.length > 0 && (
         <div
           style={{
-            marginBottom: "1.25rem",
-            padding: "0.75rem 1rem",
+            marginBottom: "0.65rem",
+            padding: "0.45rem 0.85rem",
             background: "rgba(255, 179, 71, 0.10)",
             border: "1px solid rgba(255, 179, 71, 0.35)",
-            borderRadius: "var(--radius-md)",
+            borderRadius: "var(--radius-sm)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "0.75rem",
+            fontSize: "0.8rem",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ fontSize: "1.3rem" }}>🚨</span>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--color-warning)" }}>
-                Central Disruption Store ({disruptions.length} active report{disruptions.length > 1 ? "s" : ""})
-              </div>
-              <div style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", marginTop: "0.15rem" }}>
-                Stored centrally on server. Station staff reports override conflicting traveler logs, and expired reports auto-clear.
-              </div>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span>🚨</span>
+            <span style={{ fontWeight: 600, color: "var(--color-warning)" }}>
+              {disruptions.length} Active Central Disruption{disruptions.length > 1 ? "s" : ""}:
+            </span>
+            <span style={{ color: "var(--color-text-secondary)" }}>
+              {disruptions.map((d) => `${d.hazardEmoji} ${d.segmentName}`).join(", ")}
+            </span>
           </div>
           {onClearDisruptions && (
             <button
               onClick={onClearDisruptions}
-              className="btn btn-secondary"
-              style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
-              title="Reset all community disruptions for demo"
+              className="btn btn-ghost"
+              style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}
             >
-              🔄 Clear All (Reset Demo)
+              🔄 Clear All
             </button>
           )}
         </div>
       )}
 
-      {/* Map */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <PuneMap
-          routes={ROUTES}
-          selectedRouteId={activeRouteId}
-          weightedScores={weightedScoresMap}
-          onRouteClick={onSelectRoute}
-          currentStageIndex={currentStageIndex}
-          activeDisruptions={disruptions}
-        />
-      </div>
+      {/* ── Side-by-Side Main Split View (Fits Viewport) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.9fr", gap: "1rem", alignItems: "start" }}>
+        {/* Left Column: Interactive Pune Map */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            <PuneMap
+              routes={ROUTES}
+              selectedRouteId={activeRouteId}
+              weightedScores={weightedScoresMap}
+              onRouteClick={onSelectRoute}
+              currentStageIndex={currentStageIndex}
+              activeDisruptions={disruptions}
+            />
+          </div>
 
-      {/* Scoring formula & Anti-Thrashing Legend */}
-      <div
-        style={{
-          marginBottom: "1rem",
-          padding: "0.6rem 1rem",
-          background: "var(--color-surface-2)",
-          borderRadius: "var(--radius-sm)",
-          border: "1px solid var(--color-border)",
-          fontSize: "0.8rem",
-          color: "var(--color-text-muted)",
-          display: "flex",
-          gap: "1.5rem",
-          flexWrap: "wrap",
-        }}
-      >
-        <span>📐 <strong style={{ color: "var(--color-text-primary)" }}>Weighted Score</strong> = Σ (Factor Score × Active Weight)</span>
-        <span>⏱ <strong style={{ color: "var(--color-text-primary)" }}>Remaining ETA</strong> = Sum of unfinished segments</span>
-        <span>⚖️ <strong style={{ color: "var(--color-accent)" }}>Anti-Thrashing Threshold</strong>: +{SWITCHING_THRESHOLD} pts improvement required to flip route</span>
-      </div>
-
-      {/* Route rankings */}
-      <div style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-        <h2 style={{ fontSize: "1.1rem" }}>Route Rankings from Current Position</h2>
-        <span className="badge badge-primary">Mid-Journey Re-Ranked</span>
-        <span style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>Sorted by weighted score ↓</span>
-      </div>
-
-      <div className="grid-3" style={{ marginBottom: "1.5rem" }}>
-        {ranked.map(({ route, factorScores, weightedScore, remainingEtaMin, relevantDisruptions, hasActiveBlocker }, rank) => {
-          const isTop = rank === 0;
-          const isSelected = activeRouteId === route.id;
-
-          return (
-            <div key={route.id} style={{ position: "relative" }}>
-              {isTop && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "-10px",
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    background: "linear-gradient(135deg,#FFB347,#FF6B6B)",
-                    color: "#fff",
-                    fontSize: "0.7rem",
-                    fontWeight: 700,
-                    padding: "0.2rem 0.75rem",
-                    borderRadius: "999px",
-                    zIndex: 1,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  🥇 Recommended Pick
-                </div>
-              )}
-              <RouteCard
-                route={route}
-                scenario={{ etaMultiplier: 1.0, fixedDelay: 0 }}
-                weightedScore={weightedScore}
-                factorScores={factorScores}
-                selected={isSelected}
-                onSelect={onSelectRoute}
-                disruptions={relevantDisruptions}
-              />
+          {/* Completed Segment Guarantee Pill */}
+          <div
+            style={{
+              padding: "0.4rem 0.75rem",
+              background: "rgba(52, 211, 153, 0.08)",
+              border: "1px solid rgba(52, 211, 153, 0.25)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.76rem",
+              color: "#34D399",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span>🛡️</span>
+              <span>
+                {completedSegments.length > 0 ? (
+                  <>
+                    <strong>Locked legs:</strong> {completedSegments.map((s) => s.shortName).join(", ")}. Backtracking forbidden.
+                  </>
+                ) : (
+                  <>
+                    <strong>Origin:</strong> Full corridor ahead. Candidate routes ranked for complete journey.
+                  </>
+                )}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>
+              {currentStage.progressPct}% Complete
+            </span>
+          </div>
+        </div>
 
-      {/* Selected route detail */}
-      {selectedData && (
-        <div className="card" style={{ borderColor: `${selectedData.route.color}44` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-            <h3 style={{ color: selectedData.route.color }}>
-              📊 {selectedData.route.name} &mdash; Segment Evaluation & Factor Scores
-            </h3>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              {selectedData.route.hasBarriers && (
-                <span className="badge badge-danger">⚠️ Contains Stairs & Steep Curbs</span>
-              )}
-              {selectedData.relevantDisruptions.length > 0 && (
-                <span className="badge badge-warning">
-                  🚨 {selectedData.relevantDisruptions.length} Segment Disruption Active
+        {/* Right Column: Active Route Detail & Fast Candidate Switcher */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+          {/* Active Selected Route Detail Card */}
+          <div
+            className="card"
+            style={{
+              borderColor: selectedData.route.color,
+              background: `linear-gradient(180deg, ${selectedData.route.color}11, var(--color-surface))`,
+              padding: "0.85rem 1rem",
+            }}
+          >
+            {/* Header: Name, Rank & Score Badge */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: selectedData.route.color }} />
+                  <strong style={{ fontSize: "1rem", color: "var(--color-text-primary)" }}>
+                    {selectedData.route.shortName}
+                  </strong>
+                  {selectedData.route.id === topRouteData.route.id && (
+                    <span className="badge badge-success" style={{ fontSize: "0.68rem" }}>
+                      ⭐ #1 Recommended
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: "0.76rem", color: "var(--color-text-muted)", marginTop: "0.15rem" }}>
+                  {selectedData.route.via} &bull; {selectedData.remainingEtaMin} min remaining
+                </div>
+              </div>
+
+              {/* Large Score Pill */}
+              <div
+                style={{
+                  background: `linear-gradient(135deg, ${selectedData.route.color}, var(--color-primary-light))`,
+                  color: "#fff",
+                  fontSize: "1.15rem",
+                  fontWeight: 800,
+                  padding: "0.3rem 0.75rem",
+                  borderRadius: "var(--radius-sm)",
+                  minWidth: "52px",
+                  textAlign: "center",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+                }}
+              >
+                {selectedData.weightedScore}
+              </div>
+            </div>
+
+            {/* Accessibility Tags */}
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
+              <span className={`tag ${selectedData.route.hasBarriers ? "badge-danger" : "badge-success"}`} style={{ fontSize: "0.7rem" }}>
+                {selectedData.route.hasBarriers ? "⚠️ Physical Barriers" : "♿ Step-Free Accessible"}
+              </span>
+              <span className="tag" style={{ fontSize: "0.7rem" }}>
+                ⏱ ETA: {selectedData.remainingEtaMin} min
+              </span>
+              {selectedData.hasActiveBlocker && (
+                <span className="badge badge-danger" style={{ fontSize: "0.7rem" }}>
+                  🚫 Obstacle on Active Path
                 </span>
               )}
-              <span className="badge badge-primary">
-                Remaining Leg: ~{selectedData.remainingEtaMin} min
-              </span>
+            </div>
+
+            {/* 5-Factor Score Breakdown */}
+            <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.55rem" }}>
+              <div style={{ fontSize: "0.74rem", fontWeight: 600, color: "var(--color-text-muted)", marginBottom: "0.4rem" }}>
+                5-Factor Score Matrix:
+              </div>
+              <ScoreBars factorScores={selectedData.factorScores} />
             </div>
           </div>
 
-          {/* Segment breakdown for selected route */}
-          <div
-            style={{
-              marginBottom: "1rem",
-              padding: "0.75rem 1rem",
-              background: "var(--color-surface-2)",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-border)",
-            }}
-          >
-            <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--color-text-secondary)" }}>
-              Segment Breakdown from Pune Station to Fergusson College:
+          {/* Quick-Switch Mini Rows for All 3 Candidate Routes */}
+          <div className="card" style={{ padding: "0.65rem 0.85rem" }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-secondary)", marginBottom: "0.45rem", display: "flex", justifyContent: "space-between" }}>
+              <span>Compare All Candidate Paths:</span>
+              <span style={{ color: "var(--color-text-muted)" }}>Click to focus</span>
             </div>
+
             <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              {selectedData.completedSegments.map((seg) => (
-                <div key={seg.id} style={{ fontSize: "0.78rem", color: "#34D399", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span>✓</span>
-                  <span style={{ textDecoration: "line-through" }}>{seg.name} ({seg.baseMinutes} min)</span>
-                  <span className="badge badge-success" style={{ fontSize: "0.62rem" }}>Completed &bull; Locked</span>
-                </div>
-              ))}
-              {selectedData.remainingSegments.map((seg) => {
-                const segDisruption = selectedData.relevantDisruptions.find((d) => d.segmentId === seg.id);
+              {ranked.map(({ route, weightedScore, remainingEtaMin, hasActiveBlocker }, idx) => {
+                const isSelected = route.id === activeRouteId;
                 return (
-                  <div key={seg.id} style={{ fontSize: "0.78rem", color: segDisruption ? "var(--color-danger)" : "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span>{segDisruption ? "🚨" : "⏳"}</span>
-                    <span><strong>{seg.name}</strong> (~{seg.baseMinutes} min)</span>
-                    {segDisruption && (
-                      <span className="badge badge-danger" style={{ fontSize: "0.62rem" }}>
-                        {segDisruption.hazardEmoji} {segDisruption.hazardLabel} ({segDisruption.source === "station_staff" ? "Staff Verified" : "Traveler Report"})
+                  <button
+                    key={route.id}
+                    onClick={() => onSelectRoute?.(route.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.35rem 0.65rem",
+                      borderRadius: "var(--radius-sm)",
+                      border: `1px solid ${isSelected ? route.color : "var(--color-border)"}`,
+                      background: isSelected ? `${route.color}1a` : "var(--color-surface-2)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      color: "var(--color-text-primary)",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "0.74rem", fontWeight: 800, color: idx === 0 ? "var(--color-success)" : "var(--color-text-muted)" }}>
+                        #{idx + 1}
                       </span>
-                    )}
-                  </div>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: route.color }} />
+                      <div>
+                        <div style={{ fontSize: "0.78rem", fontWeight: isSelected ? 700 : 500 }}>
+                          {route.shortName}
+                        </div>
+                        <div style={{ fontSize: "0.68rem", color: "var(--color-text-muted)" }}>
+                          {remainingEtaMin} min &bull; {route.hasBarriers ? "Stairs" : "Step-free"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                      {hasActiveBlocker && <span style={{ fontSize: "0.75rem" }}>🚨</span>}
+                      <span style={{ fontWeight: 800, fontSize: "0.88rem", color: route.color }}>
+                        {weightedScore}
+                      </span>
+                    </div>
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          <ScoreBars scores={selectedData.factorScores} />
+          {/* Anti-Thrashing Policy Info */}
+          <div
+            style={{
+              padding: "0.4rem 0.65rem",
+              background: "var(--color-surface-2)",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--color-border)",
+              fontSize: "0.72rem",
+              color: "var(--color-text-muted)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span>⚖️ <strong>Anti-Thrashing Rule:</strong> ≥ +{SWITCHING_THRESHOLD} pts required to reroute</span>
+            <span style={{ color: "var(--color-accent)" }}>Active Route Locked</span>
+          </div>
         </div>
-      )}
+      </div>
     </main>
   );
 }

@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import ScoreBars from "../components/ScoreBars";
 import {
-  ROUTES, SCENARIOS, HAZARD_TYPES, computeWeightedScore,
-  computeEta
+  ROUTES, SCENARIOS, HAZARD_TYPES, computeEta
 } from "../data/routes";
 import {
   SEGMENTS, JOURNEY_STAGES, SWITCHING_THRESHOLD, evaluateMidJourneyRoute
@@ -10,13 +9,13 @@ import {
 import { fetchRecoveryExplanation } from "../api/client";
 
 /**
- * Screen 3 – Disruption & Recovery
- * Requirements:
- * 1. Mid-journey re-ranking from current position onward (no backtracking)
- * 2. Shared central disruption store on server
- * 3. Conflicting & expiring reports (Staff overrides traveler, auto-expiry, anti-thrashing threshold)
- * 4. Replayable event log as source of truth
- * 5. Hands-free audio announcement + 1-tap accept/reject
+ * Screen 3 – Disruption & Recovery (Compact & Dropdown-Driven)
+ * Clean, compact design with:
+ * - Scenario selector dropdown
+ * - Mid-journey position dropdown
+ * - Route impact inspector dropdown
+ * - Compact community disruption reporting drawer & active list
+ * - Minimal vertical scrolling
  */
 export default function DisruptionRecoveryScreen({
   weights,
@@ -35,8 +34,10 @@ export default function DisruptionRecoveryScreen({
   const [explanation, setExplanation]           = useState("");
   const [loadingAI, setLoadingAI]               = useState(false);
   const [aiError, setAiError]                   = useState(null);
+  const [selectedImpactRouteId, setSelectedImpactRouteId] = useState("accessible-main");
 
   // Hazard reporting form state
+  const [showReportForm, setShowReportForm]     = useState(false);
   const [targetSegmentId, setTargetSegmentId]   = useState("seg-metro-overpass");
   const [hazardType, setHazardType]             = useState("broken-lift");
   const [reportSource, setReportSource]         = useState("station_staff");
@@ -48,15 +49,15 @@ export default function DisruptionRecoveryScreen({
   const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId) || SCENARIOS[0];
   const currentStage   = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
 
-  // Baseline data: clean route BEFORE any disruptions evaluated from current position
+  // Baseline data: clean route BEFORE disruptions evaluated from current position
   const beforeData = useMemo(() => {
     return Object.fromEntries(
       ROUTES.map((r) => {
         const evalRes = evaluateMidJourneyRoute(
           r,
           currentStageIndex,
-          [], // Clean pre-disruption baseline: 0 disruptions
-          {}, // Clean pre-disruption baseline: 0 scenario deltas
+          [],
+          {},
           weights
         );
         return [r.id, evalRes];
@@ -97,7 +98,7 @@ export default function DisruptionRecoveryScreen({
     onLogEvent?.({
       type: "scenario",
       icon: scenario.icon,
-      title: `Scenario Triggered: ${scenario.label}`,
+      title: `Scenario: ${scenario.label}`,
       detail: `${scenario.description} (Evaluated from ${currentStage.name})`,
       snapshot: {
         stageIndex: currentStageIndex,
@@ -116,7 +117,6 @@ export default function DisruptionRecoveryScreen({
       const beforeScores = Object.fromEntries(
         ROUTES.map((r) => [r.shortName, beforeData[r.id].weightedScore])
       );
-      // Evaluate fresh after scores with the newly selected scenario immediately
       const freshAfterEvaluations = Object.fromEntries(
         ROUTES.map((r) => [
           r.id,
@@ -148,7 +148,7 @@ export default function DisruptionRecoveryScreen({
       onLogEvent?.({
         type: "ai",
         icon: "🤖",
-        title: `AI Plain-Language Recovery (${result.provider || "local"})`,
+        title: `AI Recovery Explanation`,
         detail: expl,
         snapshot: {
           stageIndex: currentStageIndex,
@@ -160,8 +160,7 @@ export default function DisruptionRecoveryScreen({
         },
       });
     } catch (e) {
-      const msg = `AI explanation unavailable (${e.message}).`;
-      setAiError(msg);
+      setAiError(`AI explanation unavailable (${e.message}).`);
     } finally {
       setLoadingAI(false);
     }
@@ -173,18 +172,17 @@ export default function DisruptionRecoveryScreen({
 
     setSubmittingHazard(true);
     try {
-      const segment = SEGMENTS.find((s) => s.id === targetSegmentId);
-      const res = await onReportDisruption?.({
+      await onReportDisruption?.({
         segmentId: targetSegmentId,
         hazardType,
         source: reportSource,
         confidence,
         status: "active",
-        note: hazardNote || (reportSource === "station_staff" ? "Official station staff notice" : "Traveler report"),
+        note: hazardNote || (reportSource === "station_staff" ? "Official station staff directive" : "Traveler community report"),
         ttlMinutes: Number(ttlMinutes),
       });
-
       setHazardNote("");
+      setShowReportForm(false);
     } catch (err) {
       console.error("Failed to report hazard:", err);
     } finally {
@@ -203,454 +201,487 @@ export default function DisruptionRecoveryScreen({
     }
   }
 
+  const inspectedRoute = ROUTES.find((r) => r.id === selectedImpactRouteId) || ROUTES[1];
+  const inspectedBefore = beforeData[inspectedRoute.id];
+  const inspectedAfter = afterData[inspectedRoute.id];
+  const inspectedDelta = inspectedAfter.weightedScore - inspectedBefore.weightedScore;
+
   return (
     <main className="page fade-in-up" id="screen-disruption" role="tabpanel" aria-labelledby="tab-disruption">
-      <div className="page-header">
-        <h1>Disruption & Recovery</h1>
-        <p>
-          Simulate urban disruptions, test mid-journey re-ranking without backtracking,
-          and witness central station staff overrides and one-tap route recovery.
-        </p>
+      {/* ── Compact Header & Toolbar ── */}
+      <div className="compact-header">
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <h1>Disruption & Recovery</h1>
+            <span className={`badge ${activeScenarioId !== "normal" ? "badge-danger" : "badge-primary"}`} style={{ fontSize: "0.72rem" }}>
+              {activeScenario.label}
+            </span>
+          </div>
+          <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+            Simulate obstacles, observe mathematical PPT slide deltas, and test station staff overrides.
+          </p>
+        </div>
+
+        {/* ── Dropdown Menus: Scenario + Position + Quick Actions ── */}
+        <div className="compact-toolbar">
+          {/* Scenario Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <label htmlFor="disruption-scenario-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              Scenario:
+            </label>
+            <select
+              id="disruption-scenario-select"
+              className="select-dropdown"
+              value={activeScenarioId}
+              onChange={(e) => handleScenarioChange(e.target.value)}
+              aria-label="Active disruption scenario"
+            >
+              {SCENARIOS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.icon} {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mid-Journey Position Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <label htmlFor="disruption-stage-select" style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              📍 Position:
+            </label>
+            <select
+              id="disruption-stage-select"
+              className="select-dropdown"
+              value={currentStageIndex}
+              onChange={(e) => onStageChange?.(Number(e.target.value))}
+              aria-label="Mid-journey evaluation position"
+            >
+              {JOURNEY_STAGES.slice(0, 3).map((stg) => (
+                <option key={stg.id} value={stg.stage}>
+                  {stg.name} ({stg.progressPct}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Quick Staff Repair Button */}
+          <button
+            onClick={handleQuickStaffResolve}
+            className="btn btn-primary"
+            style={{ fontSize: "0.76rem", padding: "0.38rem 0.75rem" }}
+            title="Station Staff mark Shivajinagar Metro Elevator operational"
+          >
+            ✅ Staff Fix Lift
+          </button>
+
+          {/* Reset All Disruptions */}
+          {disruptions.length > 0 && onClearDisruptions && (
+            <button
+              onClick={onClearDisruptions}
+              className="btn btn-ghost"
+              style={{ fontSize: "0.76rem", padding: "0.38rem 0.65rem" }}
+              title="Clear all active disruptions"
+            >
+              🔄 Clear All
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── Mid-Journey Position & Stage Selection (Requirement 1) ── */}
+      {/* ── Scenario Alert Info Bar ── */}
       <div
-        className="card"
         style={{
-          marginBottom: "1.25rem",
-          borderColor: "rgba(108,99,255,0.3)",
-          background: "rgba(108,99,255,0.04)",
+          marginBottom: "0.65rem",
+          padding: "0.45rem 0.85rem",
+          background: activeScenarioId !== "normal" ? "rgba(255, 107, 107, 0.08)" : "var(--color-surface-2)",
+          border: `1px solid ${activeScenarioId !== "normal" ? "rgba(255, 107, 107, 0.3)" : "var(--color-border)"}`,
+          borderRadius: "var(--radius-sm)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: "0.78rem",
+          flexWrap: "wrap",
+          gap: "0.5rem",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontSize: "1.3rem" }}>🚶</span>
-            <div>
-              <strong style={{ fontSize: "0.95rem" }}>Simulate Mid-Journey Disruption Point:</strong>
-              <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
-                Current traveler position: <strong>{currentStage.name}</strong> ({currentStage.progressPct}%)
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.4rem" }}>
-            {JOURNEY_STAGES.slice(0, 3).map((stg) => (
-              <button
-                key={stg.id}
-                onClick={() => onStageChange?.(stg.stage)}
-                style={{
-                  padding: "0.3rem 0.65rem",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: "0.75rem",
-                  fontWeight: stg.stage === currentStageIndex ? 700 : 500,
-                  border: stg.stage === currentStageIndex ? "1.5px solid var(--color-primary)" : "1px solid var(--color-border)",
-                  background: stg.stage === currentStageIndex ? "var(--color-primary)" : "var(--color-surface-2)",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                {stg.shortLabel}
-              </button>
-            ))}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span>{activeScenario.icon}</span>
+          <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>
+            {activeScenario.description} (Evaluated from {currentStage.name})
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: "0.75rem", color: "var(--color-text-muted)" }}>
+          {activeScenarioId !== "normal" && (
+            <span style={{ color: "var(--color-warning)", fontWeight: 600 }}>
+              ETA Multiplier: ×{activeScenario.etaMultiplier} +{activeScenario.fixedDelay}m
+            </span>
+          )}
+          <span>Recommended Alternative: <strong style={{ color: "var(--color-accent)" }}>{bestRouteAfter.shortName}</strong></span>
         </div>
       </div>
 
-      {/* ── Scenario selector ── */}
-      <div className="card" style={{ marginBottom: "1.5rem" }}>
-        <h3 style={{ marginBottom: "1rem" }}>Disruption Scenario Simulator</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
-          {SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              id={`scenario-btn-${s.id}`}
-              className={`scenario-btn${activeScenarioId === s.id ? " active" : ""}`}
-              onClick={() => handleScenarioChange(s.id)}
-            >
-              <span className="scenario-icon">{s.icon}</span>
-              <span>{s.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {activeScenario && (
-          <div
-            style={{
-              marginTop: "0.85rem",
-              padding: "0.6rem 0.85rem",
-              background: "var(--color-surface-2)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "0.85rem",
-              color: "var(--color-text-secondary)",
-              borderLeft: "3px solid var(--color-primary)",
-            }}
-          >
-            {activeScenario.icon} {activeScenario.description}
-            {activeScenarioId !== "normal" && (
-              <span style={{ marginLeft: "1rem", color: "var(--color-warning)", fontWeight: 600 }}>
-                ⏱ ETA Multiplier: ×{activeScenario.etaMultiplier} +{activeScenario.fixedDelay} min
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── AI Recovery Explanation ── */}
-      {activeScenarioId !== "normal" && (
-        <div className="card" style={{ marginBottom: "1.5rem", borderColor: "rgba(0,212,170,0.3)", background: "rgba(0,212,170,0.04)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            <span>🤖</span>
-            <h3>AI Recovery Explanation (From Current Position)</h3>
-            {loadingAI && <div className="spinner" />}
-          </div>
-          {loadingAI && (
-            <>
-              <div className="skeleton" style={{ height: "16px", marginBottom: "0.5rem", width: "90%" }} />
-              <div className="skeleton" style={{ height: "16px", width: "70%" }} />
-            </>
-          )}
-          {!loadingAI && explanation && (
-            <p style={{ fontSize: "0.92rem", lineHeight: 1.75, color: "var(--color-text-secondary)" }}>
-              {explanation}
-            </p>
-          )}
-          {!loadingAI && aiError && (
-            <p style={{ fontSize: "0.85rem", color: "var(--color-warning)" }}>⚠️ {aiError}</p>
-          )}
-        </div>
-      )}
-
-      {/* ── Before / After score comparison (Slide 8 Math) ── */}
-      <h2 style={{ fontSize: "1.1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        Route Evaluation from {currentStage.name}
-        {activeScenarioId !== "normal" ? (
-          <span className="badge badge-danger">{activeScenario?.label}</span>
-        ) : disruptions.length > 0 ? (
-          <span className="badge badge-danger">{disruptions.length} Active Central Disruption(s)</span>
-        ) : (
-          <span className="badge badge-primary">Normal Baseline (No Disruptions)</span>
-        )}
-      </h2>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "2rem" }}>
-        {ROUTES.map((route) => {
-          const before = beforeData[route.id];
-          const after  = afterData[route.id];
-          const delta  = after.weightedScore - before.weightedScore;
-          const isBest = route.id === bestRouteAfter.id;
-          const eta    = computeEta(route.baseEtaMin, activeScenario);
-
-          return (
-            <div
-              key={route.id}
-              className="card"
-              style={{ borderColor: isBest ? `${route.color}88` : undefined }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem", flexWrap: "wrap", gap: "0.5rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                  <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: route.color, flexShrink: 0 }} />
-                  <strong style={{ fontSize: "0.97rem" }}>{route.name}</strong>
-                  {isBest && <span className="badge badge-success">✓ Recommended</span>}
-                  {route.hasBarriers && <span className="badge badge-danger" style={{ fontSize: "0.65rem" }}>⚠️ Stairs/Curbs</span>}
-                  {after.hasActiveBlocker && <span className="badge badge-danger" style={{ fontSize: "0.65rem" }}>🚫 Blocked Leg</span>}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                  <span style={{ fontSize: "0.82rem", color: "var(--color-text-muted)" }}>
-                    Remaining: ~{after.remainingEtaMin} min (Total: ~{eta} min)
-                  </span>
-                  {(activeScenarioId !== "normal" || disruptions.length > 0) && (
-                    <span
-                      style={{
-                        fontWeight: 800, fontSize: "1rem",
-                        color: delta < 0 ? "var(--color-danger)" : delta > 0 ? "var(--color-success)" : "var(--color-text-muted)"
-                      }}
-                    >
-                      {delta > 0 ? `+${delta}` : delta}
-                    </span>
-                  )}
-                </div>
+      {/* ── 2-Column Main Split View (Fits Viewport) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: "1rem", alignItems: "start" }}>
+        {/* Left Column: Route Impact Inspection & AI Briefing */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+          {/* Route Impact Card with Route Selector Dropdown */}
+          <div className="card" style={{ borderColor: inspectedRoute.color }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                <label htmlFor="impact-route-select" style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--color-text-primary)" }}>
+                  Inspect Route Impact:
+                </label>
+                <select
+                  id="impact-route-select"
+                  className="select-dropdown"
+                  value={selectedImpactRouteId}
+                  onChange={(e) => setSelectedImpactRouteId(e.target.value)}
+                  style={{ padding: "0.35rem 2rem 0.35rem 0.65rem", fontSize: "0.8rem" }}
+                >
+                  {ROUTES.map((r) => {
+                    const bScore = beforeData[r.id].weightedScore;
+                    const aScore = afterData[r.id].weightedScore;
+                    const d = aScore - bScore;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {r.shortName}: {bScore} → {aScore} ({d >= 0 ? `+${d}` : d})
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
 
-              {/* Before / After columns */}
-              <div className="compare-grid">
-                <div>
-                  <div style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Before Disruption
-                  </div>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--color-text-primary)", marginBottom: "0.5rem" }}>
-                    {before.weightedScore}
-                  </div>
-                  <ScoreBars scores={before.factorScores} compact />
-                </div>
-                <div className="compare-arrow">→</div>
-                <div>
-                  <div style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    After Disruption
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "1.75rem", fontWeight: 800, marginBottom: "0.5rem",
-                      color: after.weightedScore < before.weightedScore
-                        ? "var(--color-danger)"
-                        : after.weightedScore > before.weightedScore
-                          ? "var(--color-success)"
-                          : "var(--color-text-primary)"
-                    }}
-                  >
-                    {after.weightedScore}
-                  </div>
-                  <ScoreBars scores={after.factorScores} compact />
-                </div>
-              </div>
-
-              {/* Slide 8 Exact Math Callout */}
-              {route.id === "accessible-main" && activeScenarioId === "barrier-blocked" && (
-                <div
+              {/* Delta Badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                  {inspectedBefore.weightedScore} →
+                </span>
+                <span
                   style={{
-                    marginTop: "0.85rem", padding: "0.6rem 0.85rem",
-                    background: "rgba(255,107,107,0.08)", borderRadius: "var(--radius-sm)",
-                    borderLeft: "3px solid var(--color-danger)", fontSize: "0.82rem", color: "var(--color-danger)"
+                    background: inspectedDelta < 0 ? "rgba(255,107,107,0.18)" : "rgba(76,175,130,0.18)",
+                    color: inspectedDelta < 0 ? "var(--color-danger)" : "var(--color-success)",
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "var(--radius-sm)",
+                    fontWeight: 800,
+                    fontSize: "0.95rem",
                   }}
                 >
-                  🛗 <strong>Slide 8 PPT Match:</strong> Elevator failure on Metro Overpass dropped Route B Access from <strong>96 → 38</strong>. Total score dropped from <strong>85 → 65</strong>. Route C (Quiet Backup, <strong>Score: 83, 34 min</strong>) promoted to 🥇 #1.
+                  {inspectedAfter.weightedScore} ({inspectedDelta >= 0 ? `+${inspectedDelta}` : inspectedDelta})
+                </span>
+              </div>
+            </div>
+
+            {/* Before vs After Factor Comparison */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.85rem", borderTop: "1px solid var(--color-border)", paddingTop: "0.6rem" }}>
+              <div>
+                <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>
+                  Pre-Disruption Baseline:
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Central Disruption Reporting & Staff Override Console (Requirements 2 & 3) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "1.25rem", marginBottom: "2rem" }}>
-        {/* Report Form */}
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h3 style={{ margin: 0 }}>🚨 Central Disruption Store Console</h3>
-            <span className="badge badge-primary">Requirements 2 & 3</span>
-          </div>
-          <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
-            Reports are stored centrally on the Express server. <strong>Station staff reports strictly override traveler reports</strong>, and expired reports automatically cease affecting route scores.
-          </p>
-
-          <form onSubmit={handleHazardReport} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {/* Target Segment */}
-            <div>
-              <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.3rem" }}>
-                Target Corridor Segment
-              </label>
-              <select
-                className="input"
-                value={targetSegmentId}
-                onChange={(e) => setTargetSegmentId(e.target.value)}
-                style={{ background: "var(--color-surface-2)", color: "var(--color-text-primary)", cursor: "pointer" }}
-              >
-                {SEGMENTS.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.hasElevator ? "Has Elevator" : s.hasBarriers ? "Stairs/Curbs" : "Step-Free"})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              {/* Report Source (Requirement 3: Staff vs Traveler) */}
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.3rem" }}>
-                  Report Source (Staff Overrides)
-                </label>
-                <select
-                  className="input"
-                  value={reportSource}
-                  onChange={(e) => {
-                    const src = e.target.value;
-                    setReportSource(src);
-                    setConfidence(src === "station_staff" ? "high" : "medium");
-                    setTtlMinutes(src === "station_staff" ? 180 : 60);
-                  }}
-                  style={{ background: "var(--color-surface-2)", color: "var(--color-text-primary)", cursor: "pointer" }}
-                >
-                  <option value="station_staff">👮 Station Staff (Authoritative)</option>
-                  <option value="traveler">👤 Traveler Community</option>
-                </select>
+                <ScoreBars factorScores={inspectedBefore.factorScores} />
               </div>
-
-              {/* Hazard Type */}
               <div>
-                <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.3rem" }}>
-                  Hazard Type
-                </label>
-                <select
-                  className="input"
-                  value={hazardType}
-                  onChange={(e) => setHazardType(e.target.value)}
-                  style={{ background: "var(--color-surface-2)", color: "var(--color-text-primary)", cursor: "pointer" }}
-                >
-                  <option value="broken-lift">🛗 Elevator / Lift Failure (-58 Access)</option>
-                  <option value="broken-ramp">🔧 Broken Ramp (-25 Access)</option>
-                  <option value="flooded-path">💧 Flooded Footpath (-20 Access)</option>
-                  <option value="construction">🚧 Construction Blockade (-30 Access)</option>
-                  <option value="missing-curb">⚠️ Missing Curb Cut (-20 Access)</option>
-                  <option value="blocked-ramp">🚫 Ramp Blocked (-25 Access)</option>
-                </select>
+                <div style={{ fontSize: "0.74rem", fontWeight: 700, color: inspectedDelta < 0 ? "var(--color-danger)" : "var(--color-accent)", marginBottom: "0.35rem" }}>
+                  After Disruption Applied:
+                </div>
+                <ScoreBars factorScores={inspectedAfter.factorScores} />
               </div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              {/* Expiration TTL */}
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.3rem" }}>
-                  Report Expiry TTL
-                </label>
-                <select
-                  className="input"
-                  value={ttlMinutes}
-                  onChange={(e) => setTtlMinutes(Number(e.target.value))}
-                  style={{ background: "var(--color-surface-2)", color: "var(--color-text-primary)", cursor: "pointer" }}
-                >
-                  <option value={15}>15 Minutes (Temporary)</option>
-                  <option value={30}>30 Minutes</option>
-                  <option value={60}>1 Hour (Standard)</option>
-                  <option value={180}>3 Hours (Extended)</option>
-                </select>
-              </div>
-
-              {/* Confidence */}
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.3rem" }}>
-                  Confidence Level
-                </label>
-                <select
-                  className="input"
-                  value={confidence}
-                  onChange={(e) => setConfidence(e.target.value)}
-                  style={{ background: "var(--color-surface-2)", color: "var(--color-text-primary)", cursor: "pointer" }}
-                >
-                  <option value="high">High Confidence</option>
-                  <option value="medium">Medium Confidence</option>
-                  <option value="low">Low Confidence</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Note input */}
-            <div>
-              <textarea
-                className="textarea"
-                rows={2}
-                placeholder="Specific operational note or location detail..."
-                value={hazardNote}
-                onChange={(e) => setHazardNote(e.target.value)}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <button
-                type="submit"
-                className="btn btn-accent"
-                disabled={submittingHazard}
-                style={{ flex: 1 }}
-              >
-                {submittingHazard ? "Publishing to Central Server…" : "📍 Publish Central Disruption"}
-              </button>
-
-              {/* Station Staff Quick Resolution Button */}
-              <button
-                type="button"
-                onClick={handleQuickStaffResolve}
-                className="btn btn-primary"
-                style={{ background: "#238636", borderColor: "#2ea043" }}
-                title="Station staff marks the Shivajinagar elevator repaired, overriding traveler reports"
-              >
-                🛠️ Staff: Mark Elevator Fixed
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Live Central Store Disruption Feed */}
-        <div className="card">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-              <h3>Active Central Reports</h3>
-              <div className="live-dot" />
-              <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
-                {disruptions.length} active
-              </span>
-            </div>
-            {disruptions.length > 0 && onClearDisruptions && (
-              <button
-                onClick={onClearDisruptions}
-                className="btn btn-secondary"
-                style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem" }}
-              >
-                Clear All
-              </button>
-            )}
           </div>
 
-          {disruptions.length === 0 ? (
-            <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", textAlign: "center", padding: "2.5rem 0" }}>
-              No active disruptions on the central server.<br />
-              All corridor segments are running at baseline! ✨
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", maxHeight: "320px", overflowY: "auto" }}>
-              {disruptions.map((h) => {
-                const isStaff = h.source === "station_staff";
-                const isCleared = h.status === "cleared";
-
+          {/* Quick Comparison of All 3 Routes */}
+          <div className="card" style={{ padding: "0.65rem 0.85rem" }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-secondary)", marginBottom: "0.4rem" }}>
+              Corridor Route Rankings from {currentStage.name}:
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+              {ROUTES.map((route) => {
+                const bScore = beforeData[route.id].weightedScore;
+                const aScore = afterData[route.id].weightedScore;
+                const d = aScore - bScore;
+                const isTop = route.id === bestRouteAfter.id;
+                const isBlocked = afterData[route.id].hasActiveBlocker;
                 return (
                   <div
-                    key={h.id}
+                    key={route.id}
+                    onClick={() => setSelectedImpactRouteId(route.id)}
                     style={{
                       display: "flex",
-                      gap: "0.65rem",
-                      alignItems: "flex-start",
-                      padding: "0.65rem",
-                      background: isStaff ? "rgba(56, 189, 248, 0.08)" : "var(--color-surface-2)",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.35rem 0.65rem",
                       borderRadius: "var(--radius-sm)",
-                      border: isStaff ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid var(--color-border)",
+                      border: `1px solid ${selectedImpactRouteId === route.id ? route.color : "var(--color-border)"}`,
+                      background: selectedImpactRouteId === route.id ? `${route.color}15` : "var(--color-surface-2)",
+                      cursor: "pointer",
+                      fontSize: "0.78rem",
                     }}
                   >
-                    <span style={{ fontSize: "1.3rem" }}>{h.hazardEmoji}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                        <strong style={{ fontSize: "0.85rem", color: isStaff ? "#38BDF8" : "inherit" }}>
-                          {h.hazardLabel}
-                        </strong>
-                        <span className={`badge ${isStaff ? "badge-primary" : "badge-secondary"}`} style={{ fontSize: "0.65rem" }}>
-                          {isStaff ? "👮 Staff Override" : "👤 Traveler"}
-                        </span>
-                      </div>
-
-                      <div style={{ fontSize: "0.76rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
-                        Segment: <strong>{h.segmentName || h.segmentId}</strong> &bull; Confidence: {h.confidence}
-                      </div>
-
-                      {h.note && (
-                        <div style={{ fontSize: "0.78rem", color: "var(--color-text-secondary)", marginTop: "0.25rem", fontStyle: "italic" }}>
-                          "{h.note}"
-                        </div>
-                      )}
-
-                      <div style={{ fontSize: "0.72rem", color: "#8b949e", marginTop: "0.3rem" }}>
-                        Expires at: {new Date(h.expiresAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} ({h.ttlMinutes}m TTL)
-                      </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: route.color }} />
+                      <strong>{route.shortName}</strong>
+                      {isTop && <span className="badge badge-success" style={{ fontSize: "0.65rem" }}>#1 Best</span>}
+                      {isBlocked && <span className="badge badge-danger" style={{ fontSize: "0.65rem" }}>Blocked</span>}
                     </div>
-
-                    {onDeleteDisruption && (
-                      <button
-                        onClick={() => onDeleteDisruption(h.id)}
-                        className="btn btn-secondary"
-                        style={{ fontSize: "0.65rem", padding: "0.2rem 0.4rem" }}
-                        title="Dismiss"
-                      >
-                        ✕
-                      </button>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ color: "var(--color-text-muted)", fontSize: "0.74rem" }}>{bScore} →</span>
+                      <strong style={{ color: d < 0 ? "var(--color-danger)" : route.color, fontSize: "0.85rem" }}>
+                        {aScore}
+                      </strong>
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* AI Plain-Language Recovery Explanation */}
+          <div
+            className="card"
+            style={{
+              borderColor: "rgba(0, 212, 170, 0.35)",
+              background: "rgba(0, 212, 170, 0.04)",
+              padding: "0.75rem 0.95rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span>🤖</span>
+                <strong style={{ fontSize: "0.86rem", color: "var(--color-accent)" }}>
+                  AI Detour Explanation
+                </strong>
+                {loadingAI && <div className="spinner" style={{ width: "14px", height: "14px" }} />}
+              </div>
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-muted)" }}>
+                Llama 3.1
+              </span>
+            </div>
+
+            {loadingAI ? (
+              <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                Generating plain-language traveler advisory…
+              </p>
+            ) : explanation ? (
+              <p style={{ fontSize: "0.82rem", lineHeight: 1.5, color: "var(--color-text-secondary)" }}>
+                {explanation}
+              </p>
+            ) : (
+              <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                Select a disruption scenario above to see the AI recovery briefing.
+              </p>
+            )}
+
+            {aiError && (
+              <div style={{ fontSize: "0.76rem", color: "var(--color-warning)", marginTop: "0.3rem" }}>
+                ⚠️ {aiError}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Central Disruption Store & Reporting Drawer */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+          {/* Active Central Disruptions Card */}
+          <div className="card" style={{ padding: "0.75rem 0.95rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.55rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span>🚨</span>
+                <strong style={{ fontSize: "0.88rem" }}>
+                  Central Disruption Store ({disruptions.length})
+                </strong>
+              </div>
+              <button
+                onClick={() => setShowReportForm(!showReportForm)}
+                className="btn btn-primary"
+                style={{ fontSize: "0.72rem", padding: "0.25rem 0.6rem" }}
+              >
+                {showReportForm ? "✕ Close Form" : "➕ Report Hazard"}
+              </button>
+            </div>
+
+            {/* Active List */}
+            {disruptions.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "1.2rem 0.5rem", color: "var(--color-text-muted)", fontSize: "0.8rem" }}>
+                ✅ All Pune corridor segments clear. No active disruptions.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem", maxHeight: "240px", overflowY: "auto" }}>
+                {disruptions.map((d) => {
+                  const isStaff = d.source === "station_staff";
+                  const isCleared = d.status === "cleared";
+                  return (
+                    <div
+                      key={d.id}
+                      style={{
+                        padding: "0.45rem 0.65rem",
+                        background: isCleared ? "rgba(52, 211, 153, 0.08)" : "var(--color-surface-2)",
+                        border: `1px solid ${isStaff ? "rgba(56, 189, 248, 0.4)" : "var(--color-border)"}`,
+                        borderRadius: "var(--radius-sm)",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          <span>{d.hazardEmoji}</span>
+                          <strong>{d.segmentName}</strong>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          <span
+                            className="badge"
+                            style={{
+                              fontSize: "0.62rem",
+                              padding: "0.15rem 0.45rem",
+                              background: isStaff ? "rgba(56, 189, 248, 0.18)" : "rgba(255, 179, 71, 0.18)",
+                              color: isStaff ? "#38BDF8" : "var(--color-warning)",
+                            }}
+                          >
+                            {isStaff ? "STAFF (100%)" : "COMMUNITY (70%)"}
+                          </span>
+                          {onDeleteDisruption && (
+                            <button
+                              onClick={() => onDeleteDisruption(d.id)}
+                              style={{ background: "none", border: "none", color: "var(--color-text-muted)", cursor: "pointer", fontSize: "0.8rem" }}
+                              title="Delete report"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
+                        {d.hazardLabel} &bull; {d.note || "No notes"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Compact Dropdown-Driven Hazard Report Form */}
+          {showReportForm && (
+            <div
+              className="card fade-in-up"
+              style={{
+                borderColor: "rgba(108, 99, 255, 0.4)",
+                background: "var(--color-surface-2)",
+                padding: "0.75rem 0.95rem",
+              }}
+            >
+              <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.55rem" }}>
+                Report New Disruption:
+              </div>
+
+              <form onSubmit={handleHazardReport} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {/* Segment Dropdown */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                  <label htmlFor="report-segment-select" style={{ fontSize: "0.74rem", color: "var(--color-text-muted)" }}>
+                    Affected Corridor Segment:
+                  </label>
+                  <select
+                    id="report-segment-select"
+                    className="select-dropdown"
+                    value={targetSegmentId}
+                    onChange={(e) => setTargetSegmentId(e.target.value)}
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 2rem 0.35rem 0.65rem" }}
+                  >
+                    {SEGMENTS.map((seg) => (
+                      <option key={seg.id} value={seg.id}>
+                        {seg.name} ({seg.routeIds.join(", ")})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Hazard Type Dropdown */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                  <label htmlFor="report-hazard-select" style={{ fontSize: "0.74rem", color: "var(--color-text-muted)" }}>
+                    Hazard / Obstacle Type:
+                  </label>
+                  <select
+                    id="report-hazard-select"
+                    className="select-dropdown"
+                    value={hazardType}
+                    onChange={(e) => setHazardType(e.target.value)}
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 2rem 0.35rem 0.65rem" }}
+                  >
+                    {HAZARD_TYPES.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.emoji} {h.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Source Authority & TTL in 2 Columns */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    <label htmlFor="report-source-select" style={{ fontSize: "0.74rem", color: "var(--color-text-muted)" }}>
+                      Reporting Source:
+                    </label>
+                    <select
+                      id="report-source-select"
+                      className="select-dropdown"
+                      value={reportSource}
+                      onChange={(e) => {
+                        const src = e.target.value;
+                        setReportSource(src);
+                        setConfidence(src === "station_staff" ? "high" : "medium");
+                        setTtlMinutes(src === "station_staff" ? 180 : 60);
+                      }}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 2rem 0.35rem 0.65rem" }}
+                    >
+                      <option value="station_staff">Station Staff (Overrides)</option>
+                      <option value="traveler">Community Traveler</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    <label htmlFor="report-ttl-input" style={{ fontSize: "0.74rem", color: "var(--color-text-muted)" }}>
+                      Expiry (Minutes):
+                    </label>
+                    <input
+                      id="report-ttl-input"
+                      type="number"
+                      className="input"
+                      value={ttlMinutes}
+                      onChange={(e) => setTtlMinutes(e.target.value)}
+                      min={5}
+                      max={720}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Note */}
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Optional note / landmark details…"
+                  value={hazardNote}
+                  onChange={(e) => setHazardNote(e.target.value)}
+                  style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem" }}
+                />
+
+                {/* Submit Row */}
+                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.2rem" }}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={submittingHazard}
+                    style={{ fontSize: "0.75rem", padding: "0.35rem 0.75rem" }}
+                  >
+                    {submittingHazard ? "Posting…" : "🚨 Submit to Server Store"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowReportForm(false)}
+                    className="btn btn-ghost"
+                    style={{ fontSize: "0.75rem", padding: "0.35rem 0.55rem" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
