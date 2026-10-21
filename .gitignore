@@ -34,4 +34,6 @@ Thumbs.db
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+# Local docs (not to be pushed)
+USER_PROMPTS.md
+*prompts*.md

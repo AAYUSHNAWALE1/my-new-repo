@@ -253,4 +253,4 @@ The fixed demo journey connects **Pune Railway Station** to **Fergusson College 
 ---
 
 ## 📄 License
-This project was built for accessible transit innovation. 
+This project was built for accessible transit innovation.
