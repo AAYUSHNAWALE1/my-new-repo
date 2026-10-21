@@ -68,7 +68,7 @@ PivotPath integrates with the OpenRouteService Wheelchair Routing API for real-w
 | **Frontend** | React 18, Vite | Dynamic, reactive UI and state management |
 | **Styling** | Vanilla CSS Design System | Custom dark-mode theme, glassmorphic HUDs, accessibility badges |
 | **Maps & Geospatial** | Leaflet, React-Leaflet | OpenStreetMap rendering, Pune transit corridor layers, route polyline overlays |
-| **Voice & Accessibility** | Web Speech API | Hands-free TTS alerts and voice recognition (`"Accept"` / `"Decline"`) |
+| **Audio & Accessibility** | Web Speech API | Text-to-Speech route change alerts and 1-tap recovery modal |
 | **Backend** | Node.js, Express, CORS | Disruption state machine, proxy APIs, scoring calculation |
 | **Local LLM** | Ollama (`llama3.1:8b`) | Plain-language mobility parsing & disruption recovery explanations |
 | **APIs** | OpenRouteService & Open-Meteo | Wheelchair pedestrian routing and live Pune meteorological data |
@@ -91,7 +91,7 @@ pivotpath/
 │   │   │   ├── PuneMap.jsx                 # Leaflet map with Pune corridor & segment pins
 │   │   │   ├── RouteCard.jsx               # Route scoring card with factor breakdown
 │   │   │   ├── ScoreBars.jsx               # Visual progress bars for the 5 factors
-│   │   │   ├── HandsFreePrompt.jsx         # Voice prompt HUD & 10s auto-accept countdown
+│   │   │   ├── HandsFreePrompt.jsx         # One-tap route recovery prompt with audible alert
 │   │   │   ├── WeatherWidget.jsx           # Live Pune temperature & rain probability
 │   │   │   └── EventLog.jsx                # Disruption timeline & event replay inspector
 │   │   ├── data/
@@ -102,7 +102,7 @@ pivotpath/
 │   │   │   ├── JourneyMapScreen.jsx        # Screen 2: Real-time map & route rankings
 │   │   │   └── DisruptionRecoveryScreen.jsx# Screen 3: Live disruption management
 │   │   ├── utils/
-│   │   │   └── speech.js                   # Speech synthesis & voice recognition helper
+│   │   │   └── speech.js                   # Text-to-Speech audio announcement utility
 │   │   ├── App.jsx                         # Global state & multi-screen coordinator
 │   │   ├── index.css                       # Modern dark-mode styling tokens
 │   │   └── main.jsx                        # React root entry
@@ -195,11 +195,11 @@ PivotPath includes built-in scenario simulators and cross-client synchronization
 3. In Window B (or via the Disruption tab), report a disruption (e.g., *"Elevator Out of Service at Metro Station"*).
 4. **Result:** Window A instantly detects the disruption via the central disruption store (`server/data/disruptions.json`) without requiring a manual refresh.
 
-### Test Case 3: Hands-Free Voice Recovery
-1. When a disruption impacts the traveler's active path, the **Hands-Free Recovery HUD** pops up.
+### Test Case 3: One-Tap Route Recovery
+1. When a disruption impacts the traveler's active path, the **Route Recovery Alert** pops up.
 2. The browser announces the audible alert using Text-to-Speech (TTS).
-3. Say **"Accept"** into your microphone, or let the **10-second countdown** auto-accept the safer route.
-4. The system switches to the recommended alternative without requiring tactile phone interaction.
+3. Click the large green **"ACCEPT NEW ROUTE"** single-tap button (or "Keep Current Route").
+4. The system immediately switches to the recommended alternative without requiring complex manual navigation.
 
 ### Test Case 4: Staff Authority & Expiry Override
 1. Report a traveler disruption (Confidence: 70%).

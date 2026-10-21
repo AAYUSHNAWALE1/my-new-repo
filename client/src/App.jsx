@@ -29,7 +29,7 @@ function ts() {
  * 2. Shared central disruption state with 2.5s multi-window sync
  * 3. Conflicting & expiring reports handling (Staff overrides traveler)
  * 4. Replayable event log as formal source of truth
- * 5. Hands-free voice announcement & 1-tap recovery modal
+ * 5. Route change audio announcement & 1-tap recovery modal
  */
 export default function App() {
   const [activeScreen, setActiveScreen]             = useState("plan");
@@ -256,9 +256,9 @@ export default function App() {
 
     handleLogEvent({
       type: "handsfree",
-      icon: "🗣️",
-      title: `Hands-Free Reroute Accepted: ${newRoute.shortName}`,
-      detail: `Traveler confirmed switch from ${currentRoute.shortName} to ${newRoute.shortName} via voice / single-tap button. Active journey updated.`,
+      icon: "⚡",
+      title: `Route Recovery Accepted: ${newRoute.shortName}`,
+      detail: `Traveler confirmed switch from ${currentRoute.shortName} to ${newRoute.shortName} via single-tap recovery button. Active journey updated.`,
       snapshot: { activeRouteId: newRoute.id },
     });
   }, [handsFreeSuggestion, handleLogEvent]);
@@ -273,7 +273,7 @@ export default function App() {
     handleLogEvent({
       type: "handsfree",
       icon: "✋",
-      title: `Hands-Free Reroute Rejected: Kept ${currentRoute.shortName}`,
+      title: `Route Recovery Rejected: Kept ${currentRoute.shortName}`,
       detail: `Traveler chose to remain on ${currentRoute.shortName} despite disruption on ${newRoute.shortName}.`,
     });
   }, [handsFreeSuggestion, handleLogEvent]);
@@ -427,7 +427,7 @@ export default function App() {
         />
       )}
 
-      {/* ── Hands-Free Audio & Voice Recovery Modal (Requirement 5) ── */}
+      {/* ── One-Tap Route Recovery Modal (Requirement 5) ── */}
       {handsFreeSuggestion && (
         <HandsFreePrompt
           suggestion={handsFreeSuggestion}

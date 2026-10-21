@@ -218,7 +218,7 @@ export default function DisruptionRecoveryScreen({
         <h1>Disruption & Recovery</h1>
         <p>
           Simulate urban disruptions, test mid-journey re-ranking without backtracking,
-          and witness central station staff overrides and hands-free voice recovery.
+          and witness central station staff overrides and one-tap route recovery.
         </p>
       </div>
 

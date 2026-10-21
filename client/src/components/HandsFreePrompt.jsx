@@ -1,66 +1,36 @@
-import { useState, useEffect, useRef } from "react";
-import { speak, stopSpeaking, startVoiceCommandListener, isVoiceSupported } from "../utils/speech";
+import { useEffect } from "react";
+import { speak, stopSpeaking } from "../utils/speech";
 
 /**
- * HandsFreePrompt
+ * HandsFreePrompt / RouteRecoveryPrompt
  * Requirement 5: Whenever a route change is suggested, announce the change
- * and its reason aloud. The traveler must be able to accept or reject the new
- * route either by voice or with one large, single-tap button, without needing
- * to read the screen.
+ * and its reason aloud. The traveler can accept or reject the new route
+ * with one large, single-tap button without needing to read complex tables.
  */
 export default function HandsFreePrompt({
   suggestion, // { currentRoute, newRoute, reason, oldScore, newScore }
   onAccept,
   onReject,
 }) {
-  const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [heardCommand, setHeardCommand] = useState("");
-  const stopListeningRef = useRef(null);
-
-  const announcementText = `Attention: Route change suggested. ${suggestion.reason || "A hazard was detected ahead."} We recommend switching to ${suggestion.newRoute.name}. Say Accept, or tap the green button now.`;
+  const announcementText = `Attention: Route change suggested. ${suggestion.reason || "A hazard was detected ahead."} We recommend switching to ${suggestion.newRoute.name}. Tap the green button to accept.`;
 
   // Announce aloud on mount
   useEffect(() => {
-    setVoiceSupported(isVoiceSupported());
-
-    // Speak announcement
     speak(announcementText);
-
-    // Start voice listener
-    const cleanupVoice = startVoiceCommandListener({
-      onAccept: (cmd) => {
-        setHeardCommand(`Heard: "${cmd}"`);
-        speak("New route accepted. Navigating now.");
-        setTimeout(() => onAccept?.(), 1000);
-      },
-      onReject: (cmd) => {
-        setHeardCommand(`Heard: "${cmd}"`);
-        speak("Keeping current route.");
-        setTimeout(() => onReject?.(), 1000);
-      },
-      onListeningStateChange: setIsListening,
-      onError: (err) => console.log("Voice recognition:", err),
-    });
-
-    stopListeningRef.current = cleanupVoice;
 
     return () => {
       stopSpeaking();
-      cleanupVoice();
     };
-  }, [announcementText, onAccept, onReject]);
+  }, [announcementText]);
 
   function handleManualAccept() {
     stopSpeaking();
-    stopListeningRef.current?.();
     speak("New route accepted.");
     onAccept?.();
   }
 
   function handleManualReject() {
     stopSpeaking();
-    stopListeningRef.current?.();
     speak("Keeping current route.");
     onReject?.();
   }
@@ -102,10 +72,10 @@ export default function HandsFreePrompt({
           <span style={{ fontSize: "1.5rem" }}>🚨</span>
           <div>
             <div style={{ fontWeight: 800, fontSize: "1rem", color: "#00D4AA", letterSpacing: "0.02em" }}>
-              HANDS-FREE ROUTE RECOVERY
+              ROUTE RECOVERY ALERT
             </div>
             <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
-              Audio announced aloud &bull; Voice commands active
+              Audio announced aloud &bull; One-tap route switch
             </div>
           </div>
         </div>
@@ -151,39 +121,6 @@ export default function HandsFreePrompt({
           {suggestion.reason}
         </div>
       </div>
-
-      {/* Voice Status Pill */}
-      {voiceSupported && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "0.5rem",
-            fontSize: "0.8rem",
-            color: isListening ? "#34D399" : "#8b949e",
-            marginBottom: "1rem",
-            background: "rgba(255,255,255,0.04)",
-            padding: "0.35rem 0.75rem",
-            borderRadius: "999px",
-            width: "fit-content",
-            margin: "0 auto 1rem auto",
-          }}
-        >
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: isListening ? "#34D399" : "#8b949e",
-              boxShadow: isListening ? "0 0 8px #34D399" : "none",
-            }}
-          />
-          <span>
-            {heardCommand || (isListening ? 'Say "Accept" or "Reject"' : "Voice listener ready")}
-          </span>
-        </div>
-      )}
 
       {/* ── ONE LARGE, SINGLE-TAP BUTTON (Requirement 5) ── */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
