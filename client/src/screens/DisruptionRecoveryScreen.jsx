@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import ScoreBars from "../components/ScoreBars";
 import {
   ROUTES, SCENARIOS,
