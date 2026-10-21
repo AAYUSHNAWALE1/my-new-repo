@@ -192,15 +192,27 @@ router.post("/parse-profile", async (req, res) => {
  * Returns: { explanation: string }
  */
 router.post("/recovery-explanation", async (req, res) => {
-  const { scenario, recommendedRoute, beforeScores, afterScores, stageName = "" } = req.body;
+  let scenario = req.body.scenario || req.body.scenarioName;
+  if (typeof scenario === "object" && scenario !== null) {
+    scenario = scenario.label || scenario.name || scenario.id || "";
+  }
+  let recommendedRoute = req.body.recommendedRoute || req.body.recommendedRouteName;
+  if (typeof recommendedRoute === "object" && recommendedRoute !== null) {
+    recommendedRoute = recommendedRoute.shortName || recommendedRoute.name || recommendedRoute.id || "";
+  }
+  const beforeScores = req.body.beforeScores || {};
+  const afterScores = req.body.afterScores || {};
+  const stageName = req.body.stageName || req.body.stage || "";
 
   if (!scenario || !recommendedRoute) {
     return res.status(400).json({ error: "scenario and recommendedRoute are required" });
   }
 
+  const timeoutMs = Number(req.body.timeout) || 3500;
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const userMessage = `Disruption scenario: ${scenario}
 Stage/Position: ${stageName || "Mid-journey"}
@@ -214,6 +226,10 @@ After scores:  ${JSON.stringify(afterScores)}`;
         { role: "system", content: RECOVERY_SYSTEM_PROMPT },
         { role: "user", content: userMessage },
       ],
+      options: {
+        num_predict: 90,
+        temperature: 0.3,
+      },
       stream: false,
     };
 
@@ -233,7 +249,7 @@ After scores:  ${JSON.stringify(afterScores)}`;
       }
     }
   } catch {
-    // Ollama offline → use smart fallback
+    // Ollama offline / timed out → use smart fallback
   }
 
   const explanation = fallbackRecoveryExplanation(scenario, recommendedRoute, beforeScores, afterScores, stageName);

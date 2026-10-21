@@ -47,17 +47,41 @@ export async function parseProfile(profileText) {
 
 /**
  * Get AI-generated plain-language recovery explanation.
- * @param {string} scenario
- * @param {string} recommendedRoute
- * @param {object} beforeScores
- * @param {object} afterScores
+ * @param {string|object} scenarioOrOptions
+ * @param {string} [recommendedRoute]
+ * @param {object} [beforeScores]
+ * @param {object} [afterScores]
  * @param {string} [stageName]
- * @returns {{ explanation: string, provider: string }}
+ * @returns {Promise<{ explanation: string, provider: string }>}
  */
-export async function fetchRecoveryExplanation(scenario, recommendedRoute, beforeScores, afterScores, stageName = "") {
+export async function fetchRecoveryExplanation(scenarioOrOptions, recommendedRoute, beforeScores, afterScores, stageName = "") {
+  let body;
+  if (typeof scenarioOrOptions === "object" && scenarioOrOptions !== null) {
+    const opts = scenarioOrOptions;
+    body = {
+      scenario: opts.scenario || opts.scenarioName || "",
+      recommendedRoute: opts.recommendedRoute || opts.recommendedRouteName || "",
+      beforeScores: opts.beforeScores || {},
+      afterScores: opts.afterScores || {},
+      stageName: opts.stageName || opts.stage || "",
+      disruptedRouteName: opts.disruptedRouteName || "",
+      disruptionReason: opts.disruptionReason || "",
+      timeout: opts.timeout || 16000,
+    };
+  } else {
+    body = {
+      scenario: scenarioOrOptions,
+      recommendedRoute,
+      beforeScores: beforeScores || {},
+      afterScores: afterScores || {},
+      stageName: stageName || "",
+      timeout: 16000,
+    };
+  }
+
   return apiFetch("/api/llm/recovery-explanation", {
     method: "POST",
-    body: JSON.stringify({ scenario, recommendedRoute, beforeScores, afterScores, stageName }),
+    body: JSON.stringify(body),
   });
 }
 

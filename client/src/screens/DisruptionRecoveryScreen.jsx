@@ -34,6 +34,7 @@ export default function DisruptionRecoveryScreen({
   onScenarioChange,
 }) {
   const [explanation, setExplanation]           = useState("");
+  const [aiProvider, setAiProvider]             = useState("ollama");
   const [loadingAI, setLoadingAI]               = useState(false);
   const [aiError, setAiError]                   = useState(null);
 
@@ -155,16 +156,21 @@ export default function DisruptionRecoveryScreen({
       , ROUTES[0]);
 
       const data = await fetchRecoveryExplanation({
+        scenario: scenario.label,
         scenarioName: scenario.label,
         disruptedRouteName: "Accessible Main Corridor",
+        recommendedRoute: recommendedRoute.shortName,
         recommendedRouteName: recommendedRoute.shortName,
         beforeScores,
         afterScores: freshAfterScores,
+        stageName: currentStage.name,
         userWeights: weights,
         disruptionReason: `${scenario.description} Evaluated from position: ${currentStage.name}.`,
       });
 
       setExplanation(data.explanation || "");
+      setAiProvider(data.provider || "ollama");
+      setAiError(null);
 
       onLogEvent?.({
         type: "ai",
@@ -183,6 +189,13 @@ export default function DisruptionRecoveryScreen({
       setLoadingAI(false);
     }
   }
+
+  // Auto-generate explanation if a scenario is already active on mount
+  useEffect(() => {
+    if (activeScenarioId && activeScenarioId !== "normal" && !explanation && !loadingAI) {
+      handleScenarioChange(activeScenarioId);
+    }
+  }, [activeScenarioId]);
 
   async function handleHazardReport(e) {
     e.preventDefault();
@@ -311,15 +324,30 @@ export default function DisruptionRecoveryScreen({
             background: "rgba(0,212,170,0.04)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginBottom: "0.35rem" }}>
-            <span>🤖</span>
-            <strong style={{ fontSize: "0.85rem", color: "var(--color-accent)" }}>
-              AI Recovery Explanation (Llama 3.1 8B):
-            </strong>
-            {loadingAI && <div className="spinner" style={{ width: "16px", height: "16px" }} />}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.45rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+              <span>🤖</span>
+              <strong style={{ fontSize: "0.85rem", color: "var(--color-accent)" }}>
+                AI Recovery Explanation:
+              </strong>
+              {loadingAI && <div className="spinner" style={{ width: "14px", height: "14px" }} />}
+            </div>
+            <span
+              className={`badge ${aiProvider === "ollama" ? "badge-primary" : "badge-secondary"}`}
+              style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}
+            >
+              {loadingAI
+                ? "Consulting Llama 3.1 8B…"
+                : aiProvider === "ollama"
+                ? "Llama 3.1 8B (Live)"
+                : "Dynamic Safety Engine"}
+            </span>
           </div>
           {loadingAI ? (
-            <div className="skeleton" style={{ height: "14px", width: "80%" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", padding: "0.2rem 0" }}>
+              <div className="skeleton" style={{ height: "13px", width: "95%" }} />
+              <div className="skeleton" style={{ height: "13px", width: "65%" }} />
+            </div>
           ) : explanation ? (
             <p style={{ fontSize: "0.84rem", lineHeight: 1.5, color: "var(--color-text-secondary)", margin: 0 }}>
               {explanation}
