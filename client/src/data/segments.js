@@ -191,7 +191,11 @@ export function evaluateMidJourneyRoute(
       const base = route.scores[k] ?? 0;
       const penalty = disruptionDeltas[k] || 0;
       const scen = scenarioDeltas[k] || 0;
-      return [k, Math.max(0, Math.min(100, base + penalty + scen))];
+      // If both penalty and scen apply to the same factor, avoid double-clamping identical barrier penalties
+      const combined = (penalty < 0 && scen < 0)
+        ? Math.min(penalty, scen)
+        : (penalty + scen);
+      return [k, Math.max(0, Math.min(100, base + combined))];
     })
   );
 

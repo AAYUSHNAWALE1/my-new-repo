@@ -31,7 +31,7 @@ export default function DisruptionRecoveryScreen({
   activeRouteId = "accessible-main",
   onSuggestRouteChange,
 }) {
-  const [activeScenarioId, setActiveScenarioId] = useState("normal");
+  const [activeScenarioId, setActiveScenarioId] = useState("barrier-blocked");
   const [explanation, setExplanation]           = useState("");
   const [loadingAI, setLoadingAI]               = useState(false);
   const [aiError, setAiError]                   = useState(null);
@@ -48,21 +48,21 @@ export default function DisruptionRecoveryScreen({
   const activeScenario = SCENARIOS.find((s) => s.id === activeScenarioId);
   const currentStage   = JOURNEY_STAGES[currentStageIndex] || JOURNEY_STAGES[0];
 
-  // Baseline data: evaluated from current position
+  // Baseline data: clean route BEFORE any disruptions evaluated from current position
   const beforeData = useMemo(() => {
     return Object.fromEntries(
       ROUTES.map((r) => {
         const evalRes = evaluateMidJourneyRoute(
           r,
           currentStageIndex,
-          disruptions,
-          {},
+          [], // Clean pre-disruption baseline: 0 disruptions
+          {}, // Clean pre-disruption baseline: 0 scenario deltas
           weights
         );
         return [r.id, evalRes];
       })
     );
-  }, [weights, disruptions, currentStageIndex]);
+  }, [weights, currentStageIndex]);
 
   // After data: active scenario deltas + central disruptions
   const afterData = useMemo(() => {
@@ -89,7 +89,7 @@ export default function DisruptionRecoveryScreen({
 
   // Check if route recommendation changed and exceeds switching threshold
   useEffect(() => {
-    if (activeScenarioId === "normal") return;
+    if (activeScenarioId === "normal" && disruptions.length === 0) return;
 
     const currentRoute = ROUTES.find((r) => r.id === activeRouteId) || ROUTES[1];
     const newTopRoute = bestRouteAfter;
@@ -111,7 +111,7 @@ export default function DisruptionRecoveryScreen({
         newScore: afterData[newTopRoute.id].weightedScore,
       });
     }
-  }, [activeScenarioId, bestRouteAfter, afterData, activeRouteId, onSuggestRouteChange]);
+  }, [activeScenarioId, bestRouteAfter, afterData, activeRouteId, disruptions, onSuggestRouteChange]);
 
   async function handleScenarioChange(id) {
     setActiveScenarioId(id);
@@ -142,12 +142,29 @@ export default function DisruptionRecoveryScreen({
       const beforeScores = Object.fromEntries(
         ROUTES.map((r) => [r.shortName, beforeData[r.id].weightedScore])
       );
-      const freshAfterScores = Object.fromEntries(
-        ROUTES.map((r) => [r.shortName, afterData[r.id].weightedScore])
+      // Evaluate fresh after scores with the newly selected scenario immediately
+      const freshAfterEvaluations = Object.fromEntries(
+        ROUTES.map((r) => [
+          r.id,
+          evaluateMidJourneyRoute(
+            r,
+            currentStageIndex,
+            disruptions,
+            scenario.scoreDeltas[r.id] || {},
+            weights
+          )
+        ])
       );
+      const freshAfterScores = Object.fromEntries(
+        ROUTES.map((r) => [r.shortName, freshAfterEvaluations[r.id].weightedScore])
+      );
+      const freshBestRoute = ROUTES.reduce((best, r) =>
+        freshAfterEvaluations[r.id].weightedScore > freshAfterEvaluations[best.id].weightedScore ? r : best
+      , ROUTES[0]);
+
       const result = await fetchRecoveryExplanation(
         scenario.label,
-        bestRouteAfter.shortName,
+        freshBestRoute.shortName,
         beforeScores,
         freshAfterScores,
         currentStage.name
@@ -162,7 +179,7 @@ export default function DisruptionRecoveryScreen({
         snapshot: {
           stageIndex: currentStageIndex,
           activeRouteId,
-          recommendedRouteId: bestRouteAfter.id,
+          recommendedRouteId: freshBestRoute.id,
           weights,
           disruptions,
           explanation: expl,
@@ -334,8 +351,10 @@ export default function DisruptionRecoveryScreen({
         Route Evaluation from {currentStage.name}
         {activeScenarioId !== "normal" ? (
           <span className="badge badge-danger">{activeScenario?.label}</span>
+        ) : disruptions.length > 0 ? (
+          <span className="badge badge-danger">{disruptions.length} Active Central Disruption(s)</span>
         ) : (
-          <span className="badge badge-primary">Baseline + Central Disruptions</span>
+          <span className="badge badge-primary">Normal Baseline (No Disruptions)</span>
         )}
       </h2>
 
@@ -365,7 +384,7 @@ export default function DisruptionRecoveryScreen({
                   <span style={{ fontSize: "0.82rem", color: "var(--color-text-muted)" }}>
                     Remaining: ~{after.remainingEtaMin} min (Total: ~{eta} min)
                   </span>
-                  {activeScenarioId !== "normal" && (
+                  {(activeScenarioId !== "normal" || disruptions.length > 0) && (
                     <span
                       style={{
                         fontWeight: 800, fontSize: "1rem",
