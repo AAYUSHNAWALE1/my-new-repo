@@ -435,3 +435,50 @@ code, pre { font-family: 'JetBrains Mono', monospace; }
   opacity: 0.4;
   animation: pulse-ring 1.5s ease-out infinite;
 }
+
+/* ── Accessible High Contrast Mode (Requirement 14) ────────────────────────── */
+.high-contrast {
+  --color-bg: #000000 !important;
+  --color-surface: #0a0a0a !important;
+  --color-surface-2: #141414 !important;
+  --color-text-primary: #ffffff !important;
+  --color-text-secondary: #ffff00 !important;
+  --color-text-muted: #e5e5e5 !important;
+  --color-border: #ffffff !important;
+  --color-border-active: #ffff00 !important;
+  --color-primary: #ffff00 !important;
+  --color-primary-light: #ffff88 !important;
+  --color-accent: #00ffff !important;
+}
+
+.high-contrast button,
+.high-contrast input,
+.high-contrast select,
+.high-contrast textarea {
+  border: 2px solid #ffffff !important;
+}
+
+.high-contrast button:focus-visible,
+.high-contrast input:focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 2px !important;
+}
+
+.high-contrast-card {
+  border: 2px solid #ffff00 !important;
+  box-shadow: 0 0 12px rgba(255, 255, 0, 0.3) !important;
+}
+
+/* ── Screen reader only utility ──────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
